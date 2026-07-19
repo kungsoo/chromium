@@ -33,14 +33,6 @@ THORIUM_VERSION = "150.0.7871.179"
 
 EXIT_FAILURE = 111
 
-# Network-bound git/gclient operations get a finite timeout so a stalled
-# connection fails loudly instead of hanging indefinitely (as observed with
-# `gclient sync` printing "Still working on: src" for 25+ minutes with no
-# further progress).
-CLONE_TIMEOUT_SECONDS = 30 * 60
-SYNC_TIMEOUT_SECONDS = 60 * 60
-HOOKS_TIMEOUT_SECONDS = 30 * 60
-
 
 class BootstrapError(RuntimeError):
     """Expected bootstrap failure."""
@@ -138,8 +130,6 @@ def find_command(name: str) -> str:
 def run(
     command: Sequence[str],
     cwd: Path,
-    *,
-    timeout: float | None = None,
 ) -> None:
 
     printable = subprocess.list2cmdline(command)
@@ -154,18 +144,11 @@ def run(
             command,
             cwd=cwd,
             check=True,
-            timeout=timeout,
         )
 
     except subprocess.CalledProcessError as error:
         raise BootstrapError(
             f"command failed: {printable}"
-        ) from error
-
-    except subprocess.TimeoutExpired as error:
-        raise BootstrapError(
-            f"command timed out after {timeout}s "
-            f"with no progress: {printable}"
         ) from error
 
 
@@ -273,12 +256,11 @@ def clone_repository(
         run(
             command,
             destination.parent,
-            timeout=CLONE_TIMEOUT_SECONDS,
         )
 
     except BootstrapError:
 
-        # A failed or timed-out clone can still leave behind a partial
+        # A failed clone can still leave behind a partial
         # directory (git creates it up front). Without cleanup, a retry
         # would see `destination.exists()` above and skip re-cloning,
         # getting stuck on a broken checkout instead.
@@ -395,7 +377,6 @@ def prepare_chromium_clone(
                 str(chromium_src),
             ],
             chromium_src.parent,
-            timeout=CLONE_TIMEOUT_SECONDS,
         )
 
     except BootstrapError:
@@ -459,7 +440,6 @@ def prepare_gclient(
             CHROMIUM_URL,
         ],
         chromium_src.parent,
-        timeout=CLONE_TIMEOUT_SECONDS,
     )
 
 
@@ -515,10 +495,10 @@ def sync_chromium(
                 "--no-history",
                 "--delete_unversioned_trees",
                 "--revision",
+                "-vv",
                 f"src@{THORIUM_VERSION}",
             ],
             chromium_src.parent,
-            timeout=SYNC_TIMEOUT_SECONDS,
         )
 
     except BootstrapError as error:
@@ -609,7 +589,6 @@ def run_hooks(
             "runhooks",
         ],
         chromium_src,
-        timeout=HOOKS_TIMEOUT_SECONDS,
     )
 
 
