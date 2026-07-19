@@ -224,11 +224,13 @@ def prepare_checkout(
             "--reset",
             "--nohooks",
             "--no-history",
-            "--delete_unversioned_trees",
-            "--with_branch_heads",
             "--with_tags",
+            "--with_branch_heads",
+            "--delete_unversioned_trees",
+            "--revision",
+            f"src@{THORIUM_VERSION}",
         ],
-        chromium_src,
+        chromium_src.parent,
     )
 
     run(
@@ -241,7 +243,7 @@ def prepare_checkout(
     )
 
     print("\ngclient runhooks", flush=True)
-    run([gclient, "runhooks"], chromium_src)
+    run([gclient, "runhooks"], chromium_src.parent)
 
     sysroot_arches = sysroot_architectures()
     if sysroot_arches:
