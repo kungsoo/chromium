@@ -1,67 +1,38 @@
 version: 2.1
 
 jobs:
-  build-thorium-arm64:
+  build:
     macos:
-      xcode: "16.2.0"
+      xcode: "16.4.0"
 
     resource_class: m4pro.medium
 
     environment:
       DEPOT_TOOLS_UPDATE: "0"
       GCLIENT_PY3: "1"
+      THOR_DIR: "$HOME/project"
 
     steps:
       - checkout
 
       - run:
-          name: Install dependencies
+          name: Install depot_tools & Fetch Chromium source
           command: |
-            brew update
-            brew install python git
+            cd $HOME/project/
 
-            git config --global user.name "runner"
-            git config --global user.email "runner@localhost"
-
-      - run:
-          name: Install depot_tools
-          command: |
-            cd $HOME
-
-            git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-
+            python3 $HOME/project/get_repo.py --thorium-root $HOME/project --no-history --yes
             echo 'export PATH="$HOME/depot_tools:$PATH"' >> $BASH_ENV
-            source $BASH_ENV
-
-            which gclient
-            gclient --version
-
-
-      - run:
-          name: Fetch Chromium source
-          no_output_timeout: 60m
-          command: |
-            source $BASH_ENV
-
-            mkdir -p $HOME/chromium
-            cd $HOME/chromium
-
-            fetch --no-history chromium
-
-
+            
       - run:
           name: Prepare Thorium patches
-          no_output_timeout: 60m
           command: |
             source $BASH_ENV
 
-            cd $CIRCLE_WORKING_DIRECTORY
+            cd $HOME/project
 
-            python3 ./trunk.py
+            python3 $HOME/project/version.py --thorium-root $HOME/project
 
-            python3 ./version.py
-
-            python3 ./setup.py --mac
+            python3 $HOME/project/setup.py --mac --thorium-root $HOME/project
 
 
       - run:
@@ -73,39 +44,19 @@ jobs:
 
             mkdir -p out/thorium
 
-            cp $CIRCLE_WORKING_DIRECTORY/other/Mac/mac_ARM_args.gn \
+            cp $HOME/project/other/Mac/mac_ARM_args.gn \
               out/thorium/args.gn
 
-            PGO_FILE=$(find $HOME/chromium/src/build/pgo_profiles \
-              -name "*.profdata" \
-              | head -n 1)
-
-            if [ -z "$PGO_FILE" ]; then
-              echo "PGO profile not found"
-              exit 1
-            fi
-
-            sed -i '' \
-              "s|# pgo_data_path = \".*\"|pgo_data_path = \"$PGO_FILE\"|" \
-              out/thorium/args.gn
-
-            echo "Using PGO profile:"
-            echo "$PGO_FILE"
-
-            gn args out/thorium --list
+            gn gen out/thorium
 
 
       - run:
           name: Build Thorium ARM64
-          no_output_timeout: 120m
           command: |
             source $BASH_ENV
 
-            cd $HOME/chromium/src
-
-            autoninja \
-              -C out/thorium \
-              thorium
+            cd $HOME/project
+            python3 $HOME/project/build.py --thorium-root $HOME/project
 
 
       - run:
@@ -113,17 +64,17 @@ jobs:
           command: |
             source $BASH_ENV
 
-            cd $CIRCLE_WORKING_DIRECTORY
+            cd $HOME/project
 
-            python3 ./create_dmg.py
+            python3 $HOME/project/create_dmg.py
 
 
       - store_artifacts:
-          path: $HOME/chromium/src/out/thorium/Thorium.dmg
-          destination: Thorium-arm64.dmg
+          path: $HOME/chromium/src/out/thorium/Thorium_MacOS.dmg
+          destination: Thorium.dmg
 
 
 workflows:
   build:
     jobs:
-      - build-thorium-arm64
+      - build
