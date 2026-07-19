@@ -182,7 +182,6 @@ def prepare_checkout(
     print(f"\nCurrent Thorium version is: {THORIUM_VERSION}\n")
     print(f"Checking out tags/{THORIUM_VERSION} in {chromium_src}")
 
-    run([git, "checkout", "-f", f"tags/{THORIUM_VERSION}"], chromium_src)
     run([git, "clean", "-ffd"], chromium_src)
 
     print("\ngclient sync", flush=True)
@@ -190,12 +189,13 @@ def prepare_checkout(
         [
             gclient,
             "sync",
-            "--with_branch_heads",
-            "--with_tags",
             "--force",
             "--reset",
             "--nohooks",
+            "--no-history",
             "--delete_unversioned_trees",
+            "--revision",
+            f"src@{THORIUM_VERSION}",
         ],
         chromium_src,
     )
