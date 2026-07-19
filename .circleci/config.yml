@@ -20,7 +20,7 @@ jobs:
           command: |
             cd $HOME/project/
 
-            python3 $HOME/project/get_repo.py --thorium-root $HOME/project --yes
+            python3 $HOME/project/get_repo.py --thorium-root $HOME/project
             echo 'export PATH="$HOME/depot_tools:$PATH"' >> $BASH_ENV
             
       - run:
