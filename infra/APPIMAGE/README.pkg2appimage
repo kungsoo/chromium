@@ -1,0 +1,13 @@
+Name: pkg2appimage
+Upstream: https://github.com/AppImageCommunity/pkg2appimage
+Revision: 19e30b276ffedf4d3b4b56bc6320f463625a74f8
+Revision date: 2025-07-21
+File: pkg2appimage
+SHA-256: c79de7ab5f934cb6526cad0c91fe62367b5fa8007e8323d7b84b2950bcd428fe
+License: MIT (see LICENSE.pkg2appimage)
+Local modifications: None
+
+The AArch64 library and Qt plugin paths are upstream changes from commit
+1a413c6faeec6c18b7bf71448040cc46acb99da3 (2025-02-01), not Thorium-specific
+changes. Thorium independently synchronized those lines in commit
+178ac97288c18fb520cfb70d3a889da3f5b5c320 before recording this provenance.

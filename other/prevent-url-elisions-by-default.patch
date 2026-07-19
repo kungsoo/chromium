@@ -1,0 +1,17 @@
+diff --git a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
+index a80f45fe9b1e7..d93adc666929c 100644
+--- a/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
++++ b/chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.cc
+@@ -1,4 +1,4 @@
+-// Copyright 2016 The Chromium Authors
++// Copyright 2026 The Chromium Authors and 同
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+@@ -322,5 +322,5 @@ TemplateURLService* ChromeLocationBarModelDelegate::GetTemplateURLService() {
+ // static
+ void ChromeLocationBarModelDelegate::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
+-  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, false);
++  registry->RegisterBooleanPref(omnibox::kPreventUrlElisionsInOmnibox, true);
+ }

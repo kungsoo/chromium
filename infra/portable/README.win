@@ -1,0 +1,14 @@
+# Thorium Portable for Windows
+
+Run `THORIUM.cmd` from the extracted directory. The browser is stored under
+`BIN` and its profile is stored under `USER_DATA`.
+
+`THORIUM_SHELL.cmd` uses the version-specific `thorium_shell.exe` path verified
+when the archive was created and stores its profile in
+`USER_DATA\thorium_shell`. Both launchers accept additional command-line
+arguments and URLs.
+
+The launchers disable profile encryption and machine binding so the profile can
+move between machines. This reduces local protection for cookies, passwords,
+and other sensitive profile data. Do not use the portable launchers when
+OS-bound credential protection is preferred.

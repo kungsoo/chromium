@@ -1,0 +1,525 @@
+diff --git a/build/config/BUILDCONFIG.gn b/build/config/BUILDCONFIG.gn
+index 12595c1e36678..5e798349ee982 100644
+--- a/build/config/BUILDCONFIG.gn
++++ b/build/config/BUILDCONFIG.gn
+@@ -1,4 +1,4 @@
+-# Copyright 2013 The Chromium Authors
++# Copyright 2026 The Chromium Authors and 同
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
+@@ -171,6 +171,11 @@ declare_args() {
+       is_debug && current_os != "ios" && current_os != "watchos"
+ }
+ 
++declare_args() {
++  # True for Thorium overlay builds. This gates Thorium-only generated assets.
++  is_thorium_build = true
++}
++
+ assert(!(is_debug && is_official_build), "Can't do official debug builds")
+ assert(!(current_os == "ios" && is_component_build),
+        "Can't use component build on iOS")
+@@ -432,6 +437,9 @@ if (current_os == "zos") {
+   default_compiler_configs += [ "//build/config/zos:compiler" ]
+ }
+ 
++# Make sure Thorium compiler configs come last.
++default_compiler_configs += [ "//build/config/compiler:thorium_x86_isa" ]
++
+ # Static libraries and source sets use only the compiler ones.
+ set_defaults("static_library") {
+   configs = default_compiler_configs
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index e1da11405c1f6..796deaad89b33 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -1,4 +1,4 @@
+-# Copyright 2013 The Chromium Authors
++# Copyright 2026 The Chromium Authors and 同
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
+@@ -12,6 +12,7 @@ import("//build/config/chromeos/args.gni")
+ import("//build/config/clang/clang.gni")
+ import("//build/config/compiler/compiler.gni")
+ import("//build/config/compiler_cpu_abi.gn")
++import("//build/config/compiler_opt.gni")
+ import("//build/config/coverage/coverage.gni")
+ import("//build/config/cronet/config.gni")
+ import("//build/config/dcheck_always_on.gni")
+@@ -650,7 +651,10 @@ config("compiler") {
+     }
+ 
+     # TODO(crbug.com/40192287): Investigate why/if this should be needed.
+-    if (is_win) {
++    if (thorium_x86_numeric_cflags != []) {
++      cflags += thorium_x86_numeric_cflags
++      rustflags += thorium_x86_numeric_rustflags
++    } else if (is_win) {
+       cflags += [ "/clang:-ffp-contract=off" ]
+     } else {
+       cflags += [ "-ffp-contract=off" ]
+@@ -803,6 +807,10 @@ config("compiler") {
+     # [1]: https://pinpoint-dot-chromeperf.appspot.com/job/11984a18be0000
+     # [2]: https://ci.chromium.org/ui/p/chromium/builders/try/android-binary-size/1848442
+     import_instr_limit = 30
++    # Preserve Thorium's more aggressive macOS ThinLTO import budget.
++    if (is_full_optimization_build && is_mac) {
++      import_instr_limit = 100
++    }
+ 
+     if (is_win) {
+       ldflags += [
+@@ -1256,14 +1264,39 @@ config("disallow_unstable_features") {
+   rustflags = [ "-Zallow-features=" ]
+ }
+ 
+-# The BUILDCONFIG file sets this config on targets by default, which means when
+-# building with ThinLTO, no optimization is performed in the link step.
++# The BUILDCONFIG file sets this config on targets by default. Official
++# Thorium Windows and Linux x86 builds use the source-validated O2 ThinLTO
++# policy; other platforms retain Chromium's default link-time behavior.
+ config("thinlto_optimize_default") {
+   if (!is_debug && use_thin_lto && is_a_target_toolchain) {
+     lto_opt_level = 0
++    _thorium_x86_thinlto =
++        is_full_optimization_build && thin_lto_enable_optimizations &&
++        (is_win || is_linux) && (current_cpu == "x86" || current_cpu == "x64")
++    if (_thorium_x86_thinlto) {
++      lto_opt_level = 2
++    }
+ 
+     if (is_win) {
+       ldflags = [ "/opt:lldlto=" + lto_opt_level ]
++      if (_thorium_x86_thinlto) {
++        ldflags += [ "-opt:lldltocgo=3" ]
++        ldflags += [
++          "-mllvm:-adce-remove-loops=true",
++          "-mllvm:-x86-align-branch-boundary=32",
++          "-mllvm:-x86-align-branch=jcc+jmp+indirect",
++        ]
++      }
++    } else if (is_linux) {
++      ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
++      if (_thorium_x86_thinlto) {
++        ldflags += [ "-Wl,--lto-CGO3" ]
++        ldflags += [
++          "-Wl,-mllvm,-adce-remove-loops=true",
++          "-Wl,-mllvm,-x86-align-branch-boundary=32",
++          "-Wl,-mllvm,-x86-align-branch=jcc+jmp+indirect",
++        ]
++      }
+     } else {
+       ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
+     }
+@@ -1296,9 +1329,46 @@ config("thinlto_optimize_max") {
+     } else {
+       lto_opt_level = 0
+     }
++    _thorium_x86_thinlto =
++        is_full_optimization_build && lto_opt_level == 2 &&
++        (is_win || is_linux) && (current_cpu == "x86" || current_cpu == "x64")
+ 
+     if (is_win) {
+       ldflags = [ "/opt:lldlto=" + lto_opt_level ]
++      if (_thorium_x86_thinlto) {
++        ldflags += [ "-opt:lldltocgo=3" ]
++        ldflags += [
++          "-mllvm:-import-hot-multiplier=15",
++          "-mllvm:-adce-remove-loops=true",
++          "-mllvm:-enable-gvn-hoist",
++          "-mllvm:-enable-gvn-sink",
++          "-mllvm:-machine-sink-split",
++          "-mllvm:-phi-node-folding-threshold=4",
++          "-mllvm:-sink-insts-to-avoid-spills",
++          "-mllvm:-spec-exec-max-speculation-cost=15",
++          "-mllvm:-x86-align-branch-boundary=32",
++          "-mllvm:-x86-align-branch=jcc+jmp+indirect",
++          "-mllvm:-x86-cmov-converter",
++        ]
++      }
++    } else if (is_linux) {
++      ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
++      if (_thorium_x86_thinlto) {
++        ldflags += [ "-Wl,--lto-CGO3" ]
++        ldflags += [
++          "-Wl,-mllvm,-import-hot-multiplier=15",
++          "-Wl,-mllvm,-adce-remove-loops=true",
++          "-Wl,-mllvm,-enable-gvn-hoist",
++          "-Wl,-mllvm,-enable-gvn-sink",
++          "-Wl,-mllvm,-machine-sink-split",
++          "-Wl,-mllvm,-phi-node-folding-threshold=4",
++          "-Wl,-mllvm,-sink-insts-to-avoid-spills",
++          "-Wl,-mllvm,-spec-exec-max-speculation-cost=15",
++          "-Wl,-mllvm,-x86-align-branch-boundary=32",
++          "-Wl,-mllvm,-x86-align-branch=jcc+jmp+indirect",
++          "-Wl,-mllvm,-x86-cmov-converter",
++        ]
++      }
+     } else {
+       ldflags = [ "-Wl,--lto-O" + lto_opt_level ]
+     }
+@@ -1335,7 +1405,10 @@ config("compiler_cpu_abi") {
+ # for particular Chromium code or for working around particular
+ # compiler bugs (or the combination of the two).
+ config("compiler_codegen") {
+-  configs = []
++  configs = [
++    ":thorium_x86_tune",
++    ":thorium_arm_tune",
++  ]
+   cflags = []
+   ldflags = []
+ 
+@@ -2403,6 +2476,31 @@ config("no_incompatible_pointer_warnings") {
+   }
+ }
+ 
++# Thorium x86 ISA requirements are applied directly to all target code. Tuning
++# is nested under compiler_codegen so targets that intentionally replace code
++# generation policy can opt out without losing the required ISA baseline.
++config("thorium_x86_isa") {
++  cflags = thorium_x86_isa_cflags
++  rustflags = thorium_x86_isa_rustflags
++}
++
++config("thorium_x86_tune") {
++  cflags = thorium_x86_tune_cflags
++  rustflags = thorium_x86_tune_rustflags
++}
++
++# Keep the existing ARM product tuning independent of the x86 profile system.
++config("thorium_arm_tune") {
++  cflags = []
++  if (is_a_target_toolchain && current_cpu == "arm64") {
++    if (is_mac) {
++      cflags += [ "-mcpu=apple-m1" ]
++    } else if (is_linux && is_raspi) {
++      cflags += [ "-mtune=cortex-a72" ]
++    }
++  }
++}
++
+ # Optimization -----------------------------------------------------------------
+ #
+ # The BUILDCONFIG file sets the "default_optimization" config on targets by
+@@ -2641,9 +2739,18 @@ config("optimize_max") {
+   if (is_win) {
+     # Favor speed over size, /O2 must be before the common flags.
+     # /O2 implies /Ot, /Oi, and /GF.
+-    cflags = [ "/O2" ] + common_optimize_on_cflags
++    cflags = [ "/O2" ]
++    if (is_full_optimization_build &&
++        (current_cpu == "x86" || current_cpu == "x64")) {
++      cflags += [ "/clang:-O3" ]
++    }
++    cflags += common_optimize_on_cflags
+   } else if (optimize_for_fuzzing) {
+     cflags = [ "-O1" ] + common_optimize_on_cflags
++  } else if (is_full_optimization_build &&
++             (is_linux || is_mac || is_android)) {
++    cflags = [ "-O3" ] + common_optimize_on_cflags
++    ldflags += [ "-Wl,-O3" ]
+   } else {
+     cflags = [ "-O2" ] + common_optimize_on_cflags
+   }
+diff --git a/build/config/compiler_cpu_abi.gn b/build/config/compiler_cpu_abi.gn
+index ae62bab587e7d..bbeb916437ad8 100644
+--- a/build/config/compiler_cpu_abi.gn
++++ b/build/config/compiler_cpu_abi.gn
+@@ -55,7 +55,6 @@ if ((is_posix && !is_apple) || is_fuchsia) {
+       cpu_abi_cflags += [ "-m64" ]
+       cpu_abi_ldflags += [ "-m64" ]
+     }
+-    cpu_abi_cflags += [ "-msse3" ]
+     if (target_os == "chromeos" && cros_target_cpu_arch != "" &&
+         is_a_target_toolchain) {
+       cpu_abi_cflags += [ "-march=$cros_target_cpu_arch" ]
+@@ -69,10 +68,7 @@ if ((is_posix && !is_apple) || is_fuchsia) {
+       cpu_abi_cflags += [ "-m32" ]
+       cpu_abi_ldflags += [ "-m32" ]
+     }
+-    cpu_abi_cflags += [
+-      "-mfpmath=sse",
+-      "-msse3",
+-    ]
++    cpu_abi_cflags += [ "-mfpmath=sse" ]
+   } else if (current_cpu == "arm") {
+     if (is_clang && !is_android && !is_chromeos_device) {
+       cpu_abi_cflags += [ "--target=arm-linux-gnueabihf" ]
+diff --git a/build/config/compiler_opt.gni b/build/config/compiler_opt.gni
+new file mode 100644
+index 0000000000000..59cc302488e85
+--- /dev/null
++++ b/build/config/compiler_opt.gni
+@@ -0,0 +1,227 @@
++# Copyright 2026 Alex313031
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/config/compiler/compiler.gni")
++
++declare_args() {
++  # Use maximum optimization for official Thorium builds.
++  is_full_optimization_build = is_official_build
++
++  # Whether to use Raspberry Pi specific optimizations.
++  is_raspi = false
++}
++
++_thorium_x86_profile_platform =
++    is_win || is_linux || is_mac || is_android || is_chromeos || is_fuchsia
++
++_default_thorium_x86_profile = "none"
++if (_thorium_x86_profile_platform &&
++    (target_cpu == "x86" || target_cpu == "x64")) {
++  _default_thorium_x86_profile = "sse3"
++}
++
++declare_args() {
++  # Selects the minimum x86 CPU feature set for Thorium targets. This is the
++  # only public SIMD compatibility setting; tuning and package names are
++  # derived from it.
++  thorium_x86_profile = _default_thorium_x86_profile
++}
++
++_thorium_x86_profile_is_valid =
++    thorium_x86_profile == "none" || thorium_x86_profile == "sse2" ||
++    thorium_x86_profile == "sse3" || thorium_x86_profile == "sse4_1" ||
++    thorium_x86_profile == "sse4_2" || thorium_x86_profile == "avx" ||
++    thorium_x86_profile == "avx_fma" || thorium_x86_profile == "avx2" ||
++    thorium_x86_profile == "avx2_fma" || thorium_x86_profile == "avx512_skx"
++assert(_thorium_x86_profile_is_valid,
++       "Unsupported thorium_x86_profile: " + thorium_x86_profile)
++assert(thorium_x86_profile == "none" || _thorium_x86_profile_platform,
++       "thorium_x86_profile is not supported for this target platform")
++assert(
++    thorium_x86_profile == "none" || target_cpu == "x86" || target_cpu == "x64",
++    "thorium_x86_profile requires an x86 or x64 target")
++
++if (is_debug) {
++  assert(!is_full_optimization_build,
++         "is_full_optimization_build only works with non-debug builds")
++}
++
++thorium_x86_isa_cflags = []
++thorium_x86_isa_rustflags = []
++thorium_x86_tune_cflags = []
++thorium_x86_tune_rustflags = []
++thorium_x86_numeric_cflags = []
++thorium_x86_numeric_rustflags = []
++
++# Required CPU capabilities encoded for lightweight runtime guards. Bit layout
++# is documented at the consumers; zero means no Thorium x86 ISA requirement.
++thorium_x86_required_cpu_features = 0
++thorium_windows_installer_label = ""
++thorium_linux_package_suffix = ""
++
++_thorium_x86_apply_profile =
++    is_a_target_toolchain && _thorium_x86_profile_platform &&
++    (current_cpu == "x86" || current_cpu == "x64")
++
++# ChromeOS device toolchains with an explicit -march own their complete ISA.
++if (defined(cros_target_cpu_arch) && cros_target_cpu_arch != "") {
++  _thorium_x86_apply_profile = false
++}
++
++if (_thorium_x86_apply_profile) {
++  if (thorium_x86_profile == "sse2") {
++    thorium_x86_required_cpu_features = 1
++    thorium_x86_isa_cflags = [ "-msse2" ]
++    thorium_x86_isa_rustflags = [ "-Ctarget-feature=+sse2" ]
++  } else if (thorium_x86_profile == "sse3") {
++    thorium_x86_required_cpu_features = 2
++    thorium_x86_isa_cflags = [ "-msse3" ]
++    thorium_x86_isa_rustflags = [ "-Ctarget-feature=+sse3" ]
++  } else if (thorium_x86_profile == "sse4_1") {
++    thorium_x86_required_cpu_features = 14
++    thorium_x86_isa_cflags = [
++      "-msse3",
++      "-mssse3",
++      "-msse4.1",
++    ]
++    thorium_x86_isa_rustflags = [ "-Ctarget-feature=+sse3,+ssse3,+sse4.1" ]
++    thorium_x86_tune_cflags = [ "-mtune=core2" ]
++    thorium_x86_tune_rustflags = [ "-Ztune-cpu=core2" ]
++  } else if (thorium_x86_profile == "sse4_2") {
++    thorium_x86_required_cpu_features = 30
++    thorium_x86_isa_cflags = [
++      "-msse3",
++      "-mssse3",
++      "-msse4.1",
++      "-msse4.2",
++    ]
++    thorium_x86_isa_rustflags =
++        [ "-Ctarget-feature=+sse3,+ssse3,+sse4.1,+sse4.2" ]
++    thorium_x86_tune_cflags = [ "-mtune=nehalem" ]
++    thorium_x86_tune_rustflags = [ "-Ztune-cpu=nehalem" ]
++  } else if (thorium_x86_profile == "avx") {
++    thorium_x86_required_cpu_features = 34
++    thorium_x86_isa_cflags = [
++      "-msse3",
++      "-mavx",
++    ]
++    thorium_x86_isa_rustflags = [ "-Ctarget-feature=+sse3,+avx,-fast-gather,+prefer-no-gather,+prefer-no-scatter" ]
++    thorium_x86_tune_cflags = [
++      "-mtune=sandybridge",
++      "-mno-gather",
++      "-mno-scatter",
++    ]
++    thorium_x86_tune_rustflags = [ "-Ztune-cpu=sandybridge" ]
++  } else if (thorium_x86_profile == "avx_fma") {
++    thorium_x86_required_cpu_features = 98
++    thorium_x86_isa_cflags = [
++      "-msse3",
++      "-mavx",
++      "-mfma",
++    ]
++    thorium_x86_isa_rustflags = [ "-Ctarget-feature=+sse3,+avx,+fma,-fast-gather,+prefer-no-gather,+prefer-no-scatter" ]
++    thorium_x86_tune_cflags = [
++      "-mtune=piledriver",
++      "-mno-gather",
++      "-mno-scatter",
++    ]
++    thorium_x86_tune_rustflags = [ "-Ztune-cpu=bdver2" ]
++  } else if (thorium_x86_profile == "avx2" ||
++             thorium_x86_profile == "avx2_fma" ||
++             thorium_x86_profile == "avx512_skx") {
++    thorium_x86_required_cpu_features = 162
++    thorium_x86_isa_cflags = [
++      "-msse3",
++      "-mavx",
++      "-mavx2",
++    ]
++    _thorium_rust_target_features = "+sse3,+avx,+avx2"
++
++    if (thorium_x86_profile == "avx2_fma" ||
++        thorium_x86_profile == "avx512_skx") {
++      thorium_x86_required_cpu_features = 482
++      thorium_x86_isa_cflags += [
++        "-mfma",
++        "-mf16c",
++      ]
++      _thorium_rust_target_features += ",+fma,+f16c"
++    }
++
++    if (thorium_x86_profile == "avx512_skx") {
++      thorium_x86_required_cpu_features = 16354
++      thorium_x86_isa_cflags += [
++        "-mavx512f",
++        "-mavx512cd",
++        "-mavx512vl",
++        "-mavx512bw",
++        "-mavx512dq",
++      ]
++      _thorium_rust_target_features +=
++          ",+avx512f,+avx512cd,+avx512vl,+avx512bw,+avx512dq"
++      thorium_x86_tune_cflags = [ "-mtune=skylake-avx512" ]
++      thorium_x86_tune_rustflags = [ "-Ztune-cpu=skylake-avx512" ]
++    } else {
++      thorium_x86_tune_cflags = [ "-mtune=skylake" ]
++      thorium_x86_tune_rustflags = [ "-Ztune-cpu=skylake" ]
++    }
++
++    _thorium_rust_target_features +=
++        ",-fast-gather,+prefer-no-gather,+prefer-no-scatter"
++    thorium_x86_isa_rustflags =
++        [ "-Ctarget-feature=" + _thorium_rust_target_features ]
++    thorium_x86_tune_cflags += [
++      "-mno-gather",
++      "-mno-scatter",
++    ]
++  }
++
++  _thorium_fp_contract = "off"
++  if (thorium_x86_profile == "avx2_fma" ||
++      thorium_x86_profile == "avx512_skx") {
++    _thorium_fp_contract = "fast"
++  }
++  if (is_win) {
++    thorium_x86_numeric_cflags =
++        [ "/clang:-ffp-contract=" + _thorium_fp_contract ]
++  } else {
++    thorium_x86_numeric_cflags = [ "-ffp-contract=" + _thorium_fp_contract ]
++  }
++  thorium_x86_numeric_rustflags =
++      [ "-Cllvm-args=-fp-contract=" + _thorium_fp_contract ]
++}
++
++if (_thorium_x86_apply_profile) {
++  if (thorium_x86_profile == "sse2") {
++    thorium_windows_installer_label = "WIN32_SSE2"
++    thorium_linux_package_suffix = "_SSE2"
++  } else if (thorium_x86_profile == "sse3") {
++    if (current_cpu == "x86") {
++      thorium_windows_installer_label = "WIN32_SSE3"
++    } else {
++      thorium_windows_installer_label = "SSE3"
++    }
++    thorium_linux_package_suffix = "_SSE3"
++  } else if (thorium_x86_profile == "sse4_1") {
++    thorium_windows_installer_label = "SSE4"
++    thorium_linux_package_suffix = "_SSE4"
++  } else if (thorium_x86_profile == "sse4_2") {
++    thorium_windows_installer_label = "SSE4.2"
++    thorium_linux_package_suffix = "_SSE4.2"
++  } else if (thorium_x86_profile == "avx") {
++    thorium_windows_installer_label = "AVX"
++    thorium_linux_package_suffix = "_AVX"
++  } else if (thorium_x86_profile == "avx_fma") {
++    thorium_windows_installer_label = "AVX-FMA"
++    thorium_linux_package_suffix = "_AVX-FMA"
++  } else if (thorium_x86_profile == "avx2") {
++    thorium_windows_installer_label = "AVX2-min"
++    thorium_linux_package_suffix = "_AVX2-min"
++  } else if (thorium_x86_profile == "avx2_fma") {
++    thorium_windows_installer_label = "AVX2"
++    thorium_linux_package_suffix = "_AVX2"
++  } else if (thorium_x86_profile == "avx512_skx") {
++    thorium_windows_installer_label = "AVX512"
++    thorium_linux_package_suffix = "_AVX512"
++  }
++}
+diff --git a/build/config/win/BUILD.gn b/build/config/win/BUILD.gn
+index 101c2339697ca..e2f1dd657b7af 100644
+--- a/build/config/win/BUILD.gn
++++ b/build/config/win/BUILD.gn
+@@ -1,4 +1,4 @@
+-# Copyright 2013 The Chromium Authors
++# Copyright 2026 The Chromium Authors and 同
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
+@@ -116,13 +116,6 @@ config("compiler") {
+       assert(false, "unknown current_cpu " + current_cpu)
+     }
+ 
+-    # Chrome currently requires SSE3. Clang supports targeting any Intel
+-    # microarchitecture. MSVC only supports a subset of architectures, and the
+-    # next step after SSE2 will be AVX.
+-    if (current_cpu == "x86" || current_cpu == "x64") {
+-      cflags += [ "-msse3" ]
+-    }
+-
+     # Enable ANSI escape codes if something emulating them is around (cmd.exe
+     # doesn't understand ANSI escape codes by default). Make sure to not enable
+     # this if remoteexec is in use, because this will lower cache hits.
+@@ -193,7 +186,7 @@ config("compiler") {
+     if (use_lld) {
+       # String tail merging leads to smaller binaries, but they don't compress
+       # as well, leading to increased mini_installer size (crbug.com/838449).
+-      ldflags += [ "/OPT:NOLLDTAILMERGE" ]
++      ldflags += [ "/OPT:LLDTAILMERGE" ]
+     }
+ 
+     # TODO(siggi): Is this of any use anymore?
+@@ -201,7 +194,7 @@ config("compiler") {
+     # PDB file by about 5%) but does not otherwise alter the output binary. It
+     # is enabled opportunistically for builds where it is not prohibited (not
+     # supported when incrementally linking, or using /debug:fastlink).
+-    ldflags += [ "/PROFILE" ]
++    # ldflags += [ "/PROFILE" ]
+   }
+ 
+   # arflags apply only to static_libraries. The normal linker configs are only

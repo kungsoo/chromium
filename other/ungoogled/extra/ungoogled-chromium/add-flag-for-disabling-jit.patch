@@ -1,0 +1,59 @@
+--- a/chrome/browser/ungoogled_flag_entries.h
++++ b/chrome/browser/ungoogled_flag_entries.h
+@@ -140,4 +140,8 @@
+      "Increases the storage quota for Incognito and Guest profiles",
+      "Makes Incognito and Guest profiles compute the storage quota with the same algorithm that regular profiles use. This makes it harder for websites to detect Incognito mode, but may allow sites to induce heavy memory pressure. ungoogled-chromium flag.",
+      kOsAll, FEATURE_VALUE_TYPE(storage::features::kIncreaseIncognitoStorageQuota)},
++    {"disabling-javascript-optimization-disables-jit",
++     "Disabling JavaScript optimization disables JIT",
++     "If enabled, disables JIT too if the \"JavaScript optimization\" setting is turned off. ungoogled-chromium flag.",
++     kOsAll, SINGLE_VALUE_TYPE("disabling-javascript-optimization-disables-jit")},
+ #endif  // CHROME_BROWSER_UNGOOGLED_FLAG_ENTRIES_H_
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3616,7 +3616,10 @@ bool RenderProcessHostImpl::ShouldSendGp
+ }
+ 
+ bool RenderProcessHostImpl::IsJitDisabled() {
+-  return !!(flags_ & RenderProcessFlags::kJitDisabled);
++  return !!(flags_ & RenderProcessFlags::kJitDisabled) ||
++         (base::CommandLine::ForCurrentProcess()->HasSwitch(
++              "disabling-javascript-optimization-disables-jit") &&
++          RenderProcessHostImpl::AreV8OptimizationsDisabled());
+ }
+ 
+ bool RenderProcessHostImpl::AreV8OptimizationsDisabled() {
+@@ -3744,6 +3747,9 @@ void RenderProcessHostImpl::AppendRender
+   if (IsJitDisabled()) {
+     AppendToCommaSeparatedSwitch(
+         command_line, blink::switches::kJavaScriptFlags, "--jitless");
++
++    AppendToCommaSeparatedSwitch(
++        command_line, blink::switches::kJavaScriptFlags, "--wasm_jitless");
+   } else if (AreV8OptimizationsDisabled()) {
+     AppendToCommaSeparatedSwitch(command_line,
+                                  blink::switches::kJavaScriptFlags,
+--- a/v8/gni/v8.gni
++++ b/v8/gni/v8.gni
+@@ -102,9 +102,6 @@ declare_args() {
+   # Sets -DV8_LITE_MODE.
+   v8_enable_lite_mode = false
+ 
+-  # WebAssembly interpreter (DrumBrake)  build flag.
+-  v8_enable_drumbrake = false
+-
+   # Enable Wasm interpreter tracing.
+   v8_enable_drumbrake_tracing = false
+ 
+@@ -353,6 +350,11 @@ is_drumbrake_supported =
+     (target_os == "win" || target_os == "linux" || target_os == "mac" ||
+      target_os == "ios")
+ 
++declare_args() {
++  # WebAssembly interpreter (DrumBrake)  build flag.
++  v8_enable_drumbrake = is_drumbrake_supported
++}
++
+ # Turbofan is enabled by default, except in lite mode.
+ if (v8_enable_turbofan == "") {
+   v8_enable_turbofan = !v8_enable_lite_mode

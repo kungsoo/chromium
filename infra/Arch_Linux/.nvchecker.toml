@@ -1,0 +1,4 @@
+[thorium-browser-bin]
+source = "regex"
+url = "https://github.com/Alex313031/thorium/releases"
+regex = "thorium-browser_([0-9.]+)_SSE3\\.deb"

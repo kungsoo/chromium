@@ -1,0 +1,59 @@
+Name: Thorium bundled ChromeOS Widevine CDM payloads
+Short Name: ChromeOS Widevine CDM payloads
+URL: https://www.widevine.com
+Version: architecture-specific
+Revision: N/A
+Update Mechanism: Manual
+License: By exception only
+License File: x64/LICENSE
+Security Critical: yes
+Shipped: yes
+License Android Compatible: no
+
+Description:
+These proprietary prebuilt payloads support bundle_widevine_cdm = true in
+ThoriumOS builds. They are maintained separately from the desktop Widevine
+payloads and must not be replaced with Linux desktop binaries.
+
+Provenance:
+The exact ChromeOS recovery images used to obtain these files were not recorded
+in the original commits. Based on their embedded Chromium OS build metadata and
+historical use, these payloads are inferred to have been extracted from ChromeOS
+recovery images. The ARM64 payload was also introduced as the real CDM behind
+Thorium's historical Raspberry Pi compatibility wrapper.
+
+Source recovery image: Unknown
+Last runtime validation: Unknown
+
+Redistribution:
+Widevine CDM is proprietary software. These payloads must not be redistributed
+without a separate license agreement with Google/Widevine. Availability in a
+public reference repository does not grant redistribution rights.
+The x64 and ARM64 LICENSE files have identical contents; x64/LICENSE is the
+metadata reference for both payloads.
+
+Architecture: x64
+Version: 4.10.2662.3
+Binary SHA-256: 4744EA1637E2639EAE5418BA8457971B333B1F226E253EAB4B309DD3F16043DB
+Manifest SHA-256: 50DBCD6130A69B6796068A119EC279F9E895929EECB9B626C06BB3E5D58F99CA
+License SHA-256: CB41D90DCB6DB6EED6257689AFFFB5C652973400FE63F7B0075123AD8C58DCFA
+Introduced: Thorium commit 2f9b9184daf7d7050bafb093870278aaac63c066
+Updated: Thorium commit 8a38a0aa9884aea329d99463cdd8c60f30670bca
+
+Architecture: arm64
+Version: 4.10.2557.0
+Binary SHA-256: 42DDBEDB40F079A1DD63147456C12EB1EE0E986A0CD1A8B26E57AD9D119ADBB4
+Manifest SHA-256: 18C716BB65D73C96B63B86BE60D657E50256510DC40F180AD26AC746283EB741
+License SHA-256: CB41D90DCB6DB6EED6257689AFFFB5C652973400FE63F7B0075123AD8C58DCFA
+Introduced: Thorium commit d6aee6bf14e0c8753931eefd7f8e145ba86f5126
+
+Maintenance:
+Update a payload only as an atomic binary, manifest, and license set from a
+trusted ChromeOS source. Record the source image, board, version, hashes, and
+verification results here before replacing either payload.
+
+The existing manifests retain component-package icons and platforms entries
+whose referenced resources are not part of this overlay. Chromium's bundled CDM
+loader ignores those unrelated fields, but they should not be removed until a
+ThoriumOS runtime validation confirms that no ChromeOS packaging step consumes
+them.

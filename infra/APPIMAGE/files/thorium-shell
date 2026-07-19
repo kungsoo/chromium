@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PARENT="$(dirname -- "$HERE")"
+
+export LD_LIBRARY_PATH="${PARENT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+exec "${HERE}/thorium_shell" \
+  --use-gl=desktop \
+  --enable-experimental-web-platform-features \
+  --debug \
+  "$@"

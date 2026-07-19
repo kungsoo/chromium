@@ -1,0 +1,280 @@
+# Thorium patch series.
+#
+# Syntax:
+#   other/example.patch
+#   chromium/apply/root: other/example.patch
+#   [condition] chromium/apply/root: other/example.patch
+#
+# Patch paths are relative to the Thorium repository root. Apply roots are
+# relative to the Chromium source tree.
+
+# 05 - Child repositories and generated third_party data.
+third_party/ffmpeg: other/add-hevc-ffmpeg-decoder-parser.patch
+third_party/ffmpeg: other/add-ac3-eac3-ffmpeg-decoders.patch
+third_party/ffmpeg: other/change-libavcodec-header.patch
+third_party/ffmpeg: other/fix-ffmpeg-android-x86-disable-hevc-nasm.patch
+third_party/ffmpeg: other/ffmpeg-branding.patch
+third_party/widevine: other/widevine-cdm-support.patch
+third_party/abseil-cpp: other/abseil-bmi2-include-immintrin.patch
+third_party/zstd/src: other/zstd-clang-cl-bmi2-detection.patch
+v8: other/v8-remove-local-sse2-override.patch
+[sse2] third_party/angle: other/SSE2/angle-lockfree.patch
+
+# 10 - Media, codecs, and third_party-facing browser glue.
+other/enable-hevc-ffmpeg-decoding.patch
+other/enable-webrtc-h265-l1t2-l1t3-by-default.patch
+other/enable-mpeg2-ac3-eac3-decoding.patch
+other/thorium-media-switches.patch
+other/widevine-cdm-prebuilt-signatures.patch
+
+# 20 - Product defaults, identity, resources, branding, and browser preferences.
+other/thorium-default-api-keys.patch
+other/disable-fetching-field-trials.patch
+other/thorium-blink-feature-defaults.patch
+other/allow-webaudio-autoplay.patch
+other/enable-saving-pages-from-all-schemes.patch
+other/content-gpu-vaapi-libva-config.patch
+other/thorium-content-shell-branding.patch
+other/thorium-common-branding-paths.patch
+other/android-thorium-branding.patch
+other/thorium-startup-logging.patch
+other/thorium-app-metadata-branding.patch
+other/thorium-theme-resources.patch
+other/thorium-app-vector-icons.patch
+other/preinstall-ublock-origin.patch
+other/bookmark-default-prefs.patch
+other/bookmark-dialog-default-folder.patch
+other/increase-bookmark-open-prompt-threshold.patch
+other/thorium-browser-ui-default-prefs.patch
+other/dom-distiller-reader-mode.patch
+
+# 30 - Build graph, toolchain, and platform build behavior.
+other/thorium-root-build-targets.patch
+other/thorium-chrome-build-targets.patch
+other/thorium-build-config-and-simd.patch
+other/enable-xnnpack-arm-fp16-vector.patch
+other/thorium-build-platform-tools.patch
+other/llvm-optimized-toolchain-build.patch
+
+# 40 - Linux/platform integration, UI debug tools, and shared resource branding.
+other/linux-disable-custom-titlebar-default.patch
+other/linux-obsolete-system-policy.patch
+other/linux-memory-details-branding.patch
+other/linux-shell-integration-branding.patch
+other/thorium-linux-installer-packaging.patch
+other/thorium-ui-debug-shell.patch
+other/thorium-webui-image-resources.patch
+other/thorium-browser-resource-branding.patch
+
+# 50 - UI defaults, flags, WebUI, policy, FTP, and broad UI restoration.
+other/omnibox-search-engine-icon-branding.patch
+other/relax-bad-flags-warning.patch
+other/disable-startup-warning-infobars.patch
+other/disable-default-browser-prompt.patch
+other/thorium-chrome-urls-page.patch
+other/thorium-flags-registration.patch
+other/thorium-internal-url-scheme-alias.patch
+other/thorium-internal-url-scheme-branding.patch
+other/thorium-flags-page-branding.patch
+other/thorium-version-page-branding.patch
+other/thorium-vector-icons.patch
+other/thorium-views-vector-icons.patch
+other/thorium-app-menu-icons.patch
+other/prevent-url-elisions-by-default.patch
+other/enable-chrome-labs-by-default.patch
+other/enable-whats-new-by-default.patch
+other/fix-policy-templates.patch
+other/ftp-support-thorium.patch
+other/GPC.patch
+other/add-boss-key.patch
+other/add-flag-for-close-confirmation.patch
+other/thorium-debug-mode.patch
+other/disable-middle-click-paste-with-autoscroll.patch
+other/views-menu-delay.patch
+other/new-tab-to-left-context-menu.patch
+other/status-bubble-instant-expand.patch
+other/enable-sharing-hub-page-action.patch
+other/new-tab-button-middle-click.patch
+other/thorium-2024-ui-core.patch
+other/thorium-2024-menu-interactions.patch
+other/custom-tab-width.patch
+other/classic-bookmarks.patch
+other/expand-chrome-color-choices.patch
+other/windows-menu-style-overrides.patch
+other/classic-omnibox.patch
+other/rectangular-tabs.patch
+other/prominent-active-tab-titles.patch
+other/transparent-tabs.patch
+other/toolbar-avatar-button-visibility.patch
+other/restore-tab-button.patch
+other/thorium-chrome-labs-experiments.patch
+other/add-flag-for-system-linux-theme.patch
+other/restore_download_shelf.patch
+other/downloads-page-enhancements.patch
+
+# 60 - Installer, shell integration, and context-menu behavior.
+other/mini_installer.patch
+other/open_in_same_tab.patch
+other/windows-thorium-flags-conf.patch
+
+# 70 - User-facing flags, defaults, download/security behavior, and ThoriumOS.
+other/add-flag-to-close-window-with-last-tab.patch
+other/add-flag-to-scroll-tabs.patch
+other/enable-ctrl-tab-mru.patch
+other/add-flag-for-double-click-close-tab.patch
+other/add-flag-for-right-click-close-tab.patch
+other/add-flag-for-hover-activate-tab.patch
+other/add-flag-for-open-bookmarks-in-new-tab.patch
+other/add-flag-for-open-omnibox-url-in-new-tab.patch
+other/add-flag-for-incognito-themes.patch
+other/add-flag-to-hide-extensions-menu.patch
+other/add-flag-to-hide-tab-close-buttons.patch
+other/add-flag-for-custom-ntp.patch
+other/add-flag-for-tab-hover-cards.patch
+other/force-disable-tab-outlines.patch
+other/quiet-notification-defaults.patch
+other/disable-thorium-dns-config.patch
+other/add-flag-for-encrypted-client-hello.patch
+other/disable-alternate-error-pages-by-default.patch
+other/add-flag-to-keep-all-history.patch
+other/add-flag-to-clear-data-on-exit.patch
+other/enable-parallel-downloading-by-default.patch
+other/disable-background-mode-by-default.patch
+other/thorium-dino-game.patch
+other/allow-insecure-downloads.patch
+other/disable-download-quarantine.patch
+other/notify-shell-after-download-complete.patch
+other/disable-vulkan-gpu-log-warnings.patch
+other/thorium-sandbox-compat.patch
+other/thoriumos-ash-vector-icons.patch
+other/thoriumos-help-app-discovery.patch
+other/thoriumos-sample-system-web-app.patch
+other/thoriumos-disable-stats-reporting.patch
+other/add-flag-for-auto-dark-mode.patch
+other/disable-thorium-icons.patch
+other/always-enable-reload-menu.patch
+
+# 80 - Extensions, privacy, install branding, and late platform overlays.
+other/increase-dnr-limits.patch
+other/show-hosted-apps-in-extensions.patch
+other/thorium_webui.patch
+other/keyboard_shortcuts.patch
+other/keep-expired-flags.patch
+other/disable-privacy-sandbox.patch
+other/disable-encryption.patch
+other/disable-feature-promos.patch
+other/thorium-install-static-branding.patch
+other/windows-chrome-proxy-branding.patch
+other/windows-profile-shortcut-icon-version.patch
+other/disable-aero.patch
+other/android-disable-signin-without-account-manager.patch
+other/android-extensions-support.patch
+other/chrome-web-store-protection.patch
+other/enable-extension-in-incognito.patch
+other/add-quick-extension-toggle-menu.patch
+
+# 95 - Conditional / platform-specific overlays that are still active.
+[raspi] other/linux-widevine-cdm-locations.patch
+[raspi] other/raspi-netflix-chromeos-ua.patch
+
+# ungoogled
+other/ungoogled/upstream-fixes/missing-dependencies.patch
+
+other/ungoogled/core/inox-patchset/0001-fix-building-without-safebrowsing.patch
+other/ungoogled/core/inox-patchset/0003-disable-autofill-download-manager.patch
+other/ungoogled/core/inox-patchset/0005-disable-default-extensions.patch
+other/ungoogled/core/inox-patchset/0015-disable-update-pings.patch
+other/ungoogled/core/inox-patchset/0021-disable-rlz.patch
+other/ungoogled/core/iridium-browser/safe_browsing-disable-incident-reporting.patch
+other/ungoogled/core/iridium-browser/safe_browsing-disable-reporting-of-safebrowsing-over.patch
+other/ungoogled/core/ungoogled-chromium/disable-crash-reporter.patch
+other/ungoogled/core/ungoogled-chromium/disable-google-host-detection.patch
+other/ungoogled/core/ungoogled-chromium/replace-google-search-engine-with-nosearch.patch
+other/ungoogled/core/ungoogled-chromium/toggle-translation-via-switch.patch
+other/ungoogled/core/ungoogled-chromium/disable-untraceable-urls.patch
+other/ungoogled/core/ungoogled-chromium/disable-profile-avatar-downloading.patch
+other/ungoogled/core/ungoogled-chromium/disable-gcm.patch
+other/ungoogled/core/ungoogled-chromium/disable-domain-reliability.patch
+other/ungoogled/core/ungoogled-chromium/block-trk-and-subdomains.patch
+other/ungoogled/core/ungoogled-chromium/disable-gaia.patch
+other/ungoogled/core/ungoogled-chromium/disable-fonts-googleapis-references.patch
+other/ungoogled/core/ungoogled-chromium/disable-webstore-urls.patch
+other/ungoogled/core/ungoogled-chromium/fix-learn-doubleclick-hsts.patch
+other/ungoogled/core/ungoogled-chromium/disable-webrtc-log-uploader.patch
+other/ungoogled/core/ungoogled-chromium/disable-ai.patch
+other/ungoogled/core/ungoogled-chromium/fix-building-with-prunned-binaries.patch
+other/ungoogled/core/ungoogled-chromium/disable-network-time-tracker.patch
+other/ungoogled/core/ungoogled-chromium/disable-mei-preload.patch
+other/ungoogled/core/ungoogled-chromium/fix-building-without-safebrowsing.patch
+other/ungoogled/core/ungoogled-chromium/remove-unused-preferences-fields.patch
+other/ungoogled/core/ungoogled-chromium/block-requests.patch
+other/ungoogled/core/ungoogled-chromium/doh-changes.patch
+other/ungoogled/core/ungoogled-chromium/extensions-manifestv2.patch
+other/ungoogled/core/ungoogled-chromium/remove-f1-shortcut.patch
+other/ungoogled/core/ungoogled-chromium/move-js-optimizer-unfamiliar-sites.patch
+other/ungoogled/core/ungoogled-chromium/build-with-wasm-rollup.patch
+other/ungoogled/core/ungoogled-chromium/remove-navigation-source-param.patch
+
+other/ungoogled/extra/ungoogled-chromium/add-ungoogled-flag-headers.patch
+other/ungoogled/extra/inox-patchset/0006-modify-default-prefs.patch
+other/ungoogled/extra/inox-patchset/0008-restore-classic-ntp.patch
+other/ungoogled/extra/inox-patchset/0013-disable-missing-key-warning.patch
+other/ungoogled/extra/inox-patchset/0016-chromium-sandbox-pie.patch
+other/ungoogled/extra/inox-patchset/0019-disable-battery-status-service.patch
+other/ungoogled/extra/debian/disable/google-api-warning.patch
+other/ungoogled/extra/iridium-browser/mime_util-force-text-x-suse-ymp-to-be-downloaded.patch
+other/ungoogled/extra/iridium-browser/prefs-always-prompt-for-download-directory-by-defaul.patch
+other/ungoogled/extra/iridium-browser/updater-disable-auto-update.patch
+other/ungoogled/extra/iridium-browser/Remove-EV-certificates.patch
+other/ungoogled/extra/iridium-browser/browser-disable-profile-auto-import-on-first-run.patch
+other/ungoogled/extra/bromite/fingerprinting-flags-client-rects-and-measuretext.patch
+other/ungoogled/extra/bromite/flag-max-connections-per-host.patch
+other/ungoogled/extra/bromite/flag-fingerprinting-canvas-image-data-noise.patch
+other/ungoogled/extra/ungoogled-chromium/add-components-ungoogled.patch
+other/ungoogled/extra/ungoogled-chromium/disable-formatting-in-omnibox.patch
+other/ungoogled/extra/ungoogled-chromium/add-ipv6-probing-option.patch
+other/ungoogled/extra/ungoogled-chromium/remove-disable-setuid-sandbox-as-bad-flag.patch
+other/ungoogled/extra/ungoogled-chromium/disable-intranet-redirect-detector.patch
+other/ungoogled/extra/ungoogled-chromium/fix-building-without-mdns-and-service-discovery.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-configure-extension-downloading.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-search-engine-collection.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-disable-beforeunload.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-force-punycode-hostnames.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-show-avatar-button.patch
+other/ungoogled/extra/ungoogled-chromium/add-suggestions-url-field.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-hide-crashed-bubble.patch
+other/ungoogled/extra/ungoogled-chromium/enable-paste-and-go-new-tab-button.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-bookmark-bar-ntp.patch
+other/ungoogled/extra/ungoogled-chromium/enable-menu-on-reload-button.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-omnibox-autocomplete-filtering.patch
+other/ungoogled/extra/ungoogled-chromium/disable-dial-repeating-discovery.patch
+other/ungoogled/extra/ungoogled-chromium/remove-uneeded-ui.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-convert-popups-to-tabs.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-disable-local-history-expiration.patch
+other/ungoogled/extra/ungoogled-chromium/add-extra-channel-info.patch
+other/ungoogled/extra/ungoogled-chromium/prepopulated-search-engines.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-tabsearch-button.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-grab-handle.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-disable-tls-grease.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-change-http-accept-header.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-disabling-link-drag.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-hide-fullscreen-exit-ui.patch
+other/ungoogled/extra/ungoogled-chromium/add-flags-for-referrer-customization.patch
+other/ungoogled/extra/ungoogled-chromium/default-webrtc-ip-handling-policy.patch
+other/ungoogled/extra/ungoogled-chromium/add-flags-for-existing-switches.patch
+other/ungoogled/extra/ungoogled-chromium/first-run-page.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-reduce-system-info.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-remove-client-hints.patch
+other/ungoogled/extra/ungoogled-chromium/enable-extra-locales.patch
+other/ungoogled/extra/ungoogled-chromium/remove-pac-size-limit.patch
+other/ungoogled/extra/ungoogled-chromium/enable-certificate-transparency-and-add-flag.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-spoof-webgl-renderer-info.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-to-increase-incognito-storage-quota.patch
+other/ungoogled/extra/ungoogled-chromium/disable-ai-search-shortcuts.patch
+other/ungoogled/extra/ungoogled-chromium/disable-fedcm-by-default.patch
+other/ungoogled/extra/ungoogled-chromium/bundle-hyphenation-patterns.patch
+other/ungoogled/extra/ungoogled-chromium/add-flag-for-disabling-jit.patch
+
+# Core Aduio
+other/mac-audio-output-device-uid-switch.patch
+other/mac-audio-output-device-tab-menu.patch
