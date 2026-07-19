@@ -359,7 +359,7 @@ def prepare_chromium_clone(
             "clone",
             "--depth=1",
             "--branch",
-            f"refs/tags/{THORIUM_VERSION}",
+            THORIUM_VERSION,
             CHROMIUM_URL,
             str(chromium_src),
         ],
