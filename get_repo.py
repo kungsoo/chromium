@@ -12,7 +12,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import time
 from typing import Sequence
 
 from trunk import CHROMIUM_NESTED_CHECKOUTS
@@ -33,6 +32,14 @@ CHROMIUM_URL = (
 THORIUM_VERSION = "150.0.7871.179"
 
 EXIT_FAILURE = 111
+
+# Network-bound git/gclient operations get a finite timeout so a stalled
+# connection fails loudly instead of hanging indefinitely (as observed with
+# `gclient sync` printing "Still working on: src" for 25+ minutes with no
+# further progress).
+CLONE_TIMEOUT_SECONDS = 30 * 60
+SYNC_TIMEOUT_SECONDS = 60 * 60
+HOOKS_TIMEOUT_SECONDS = 30 * 60
 
 
 class BootstrapError(RuntimeError):
@@ -111,11 +118,6 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
     )
 
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-    )
-
     return parser.parse_args(argv)
 
 
@@ -136,6 +138,8 @@ def find_command(name: str) -> str:
 def run(
     command: Sequence[str],
     cwd: Path,
+    *,
+    timeout: float | None = None,
 ) -> None:
 
     printable = subprocess.list2cmdline(command)
@@ -150,11 +154,18 @@ def run(
             command,
             cwd=cwd,
             check=True,
+            timeout=timeout,
         )
 
     except subprocess.CalledProcessError as error:
         raise BootstrapError(
             f"command failed: {printable}"
+        ) from error
+
+    except subprocess.TimeoutExpired as error:
+        raise BootstrapError(
+            f"command timed out after {timeout}s "
+            f"with no progress: {printable}"
         ) from error
 
 
@@ -258,10 +269,22 @@ def clone_repository(
     )
 
 
-    run(
-        command,
-        destination.parent,
-    )
+    try:
+        run(
+            command,
+            destination.parent,
+            timeout=CLONE_TIMEOUT_SECONDS,
+        )
+
+    except BootstrapError:
+
+        # A failed or timed-out clone can still leave behind a partial
+        # directory (git creates it up front). Without cleanup, a retry
+        # would see `destination.exists()` above and skip re-cloning,
+        # getting stuck on a broken checkout instead.
+        remove_tree(destination)
+
+        raise
 
 
 
@@ -353,18 +376,35 @@ def prepare_chromium_clone(
     )
 
 
-    run(
-        [
-            git,
-            "clone",
-            "--depth=1",
-            "--branch",
-            THORIUM_VERSION,
-            CHROMIUM_URL,
-            str(chromium_src),
-        ],
-        chromium_src.parent,
-    )
+    # NOTE: `git clone --branch` expects a short ref name (branch or tag),
+    # not a fully-qualified ref like "refs/tags/<tag>". Passing the fully
+    # qualified form causes git to look for a *branch* literally named
+    # "refs/tags/<tag>", which does not exist upstream and fails with:
+    #   fatal: Remote branch refs/tags/<tag> not found in upstream origin
+    # Passing the bare tag name lets git resolve it against both branches
+    # and tags on the remote.
+    try:
+        run(
+            [
+                git,
+                "clone",
+                "--depth=1",
+                "--branch",
+                THORIUM_VERSION,
+                CHROMIUM_URL,
+                str(chromium_src),
+            ],
+            chromium_src.parent,
+            timeout=CLONE_TIMEOUT_SECONDS,
+        )
+
+    except BootstrapError:
+
+        # Same rationale as clone_repository(): don't leave a partial
+        # checkout behind, or a retry will think it's already done.
+        remove_tree(chromium_src)
+
+        raise
 
 
     require_checkout(
@@ -387,6 +427,23 @@ def prepare_gclient(
     gclient_file = chromium_src.parent / ".gclient"
 
     if gclient_file.exists():
+
+        content = gclient_file.read_text(
+            encoding="utf-8",
+            errors="ignore",
+        )
+
+        # A stale .gclient from a prior run pointed at a different
+        # solution/URL would otherwise be silently reused, causing
+        # `gclient sync` to sync the wrong repo (or fail confusingly).
+        if CHROMIUM_URL not in content or '"src"' not in content:
+
+            raise BootstrapError(
+                f".gclient exists but does not match expected "
+                f"config (name=src, url={CHROMIUM_URL}): {gclient_file}\n"
+                "Remove it and retry to regenerate."
+            )
+
         return
 
 
@@ -402,6 +459,7 @@ def prepare_gclient(
             CHROMIUM_URL,
         ],
         chromium_src.parent,
+        timeout=CLONE_TIMEOUT_SECONDS,
     )
 
 
@@ -446,20 +504,34 @@ def sync_chromium(
     )
 
 
-    run(
-        [
-            gclient,
-            "sync",
-            "--force",
-            "--reset",
-            "--nohooks",
-            "--no-history",
-            "--delete_unversioned_trees",
-            "--revision",
-            f"src@{THORIUM_VERSION}",
-        ],
-        chromium_src.parent,
-    )
+    try:
+        run(
+            [
+                gclient,
+                "sync",
+                "--force",
+                "--reset",
+                "--nohooks",
+                "--no-history",
+                "--delete_unversioned_trees",
+                "--revision",
+                f"src@{THORIUM_VERSION}",
+            ],
+            chromium_src.parent,
+            timeout=SYNC_TIMEOUT_SECONDS,
+        )
+
+    except BootstrapError as error:
+
+        # Unlike a fresh clone, a partially-synced tree already
+        # represents real work (many DEPS entries fetched). Don't
+        # auto-delete it; just surface actionable guidance.
+        raise BootstrapError(
+            f"{error}\n"
+            "Partial sync left in place; re-run with "
+            "'gclient sync -v -v ...' to see which entry stalled, "
+            "or delete the affected sub-checkout and retry."
+        ) from error
 
 
     if not chromium_required_checkouts_exist(
@@ -537,6 +609,7 @@ def run_hooks(
             "runhooks",
         ],
         chromium_src,
+        timeout=HOOKS_TIMEOUT_SECONDS,
     )
 
 
@@ -631,16 +704,30 @@ def validate_paths(
     depot_tools: Path,
 ):
 
-    paths = [
-        chromium_src.parent,
-        thorium_root,
-        depot_tools,
+    # chromium_src itself is checked separately from its parent: the
+    # original version only compared chromium_src.parent, which missed
+    # the case where --chromium-src was pointed directly at
+    # --thorium-root or --depot-tools (e.g. both set to the same dir).
+    named_paths = [
+        ("chromium-src", chromium_src),
+        ("chromium-src parent", chromium_src.parent),
+        ("thorium-root", thorium_root),
+        ("depot-tools", depot_tools),
     ]
 
 
-    for i, left in enumerate(paths):
+    for i, (left_name, left) in enumerate(named_paths):
 
-        for right in paths[i + 1:]:
+        for right_name, right in named_paths[i + 1:]:
+
+            # chromium-src is always inside (or equal to) its own
+            # parent by construction; that relationship is expected
+            # and not a conflict.
+            if {left_name, right_name} == {
+                "chromium-src",
+                "chromium-src parent",
+            }:
+                continue
 
             if (
                 left == right
@@ -649,7 +736,8 @@ def validate_paths(
             ):
 
                 raise BootstrapError(
-                    f"checkout paths overlap: {left} {right}"
+                    f"checkout paths overlap: "
+                    f"{left} ({left_name}) {right} ({right_name})"
                 )
 
 
