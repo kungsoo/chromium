@@ -10,7 +10,7 @@ jobs:
     environment:
       DEPOT_TOOLS_UPDATE: "0"
       GCLIENT_PY3: "1"
-      THOR_DIR: "$HOME/project"
+      THOR_DIR: "/Users/distiller/project"
 
     steps:
       - checkout
@@ -30,7 +30,7 @@ jobs:
 
             cd $HOME/project
 
-            python3 $HOME/project/version.py --thorium-root $HOME/project
+            python3 $HOME/project/version.py
 
             python3 $HOME/project/setup.py --mac --thorium-root $HOME/project
 
