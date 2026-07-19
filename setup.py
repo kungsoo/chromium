@@ -325,7 +325,6 @@ def prepare_profile(profile: str, thorium_root: Path, chromium_src: Path) -> Non
             thorium_root / "other" / "Mac" / "thorium_version.txt",
             text_resources / "thorium_version.txt",
         )
-        download_pgo(chromium_src, "mac-arm")
         return
     if profile == "raspi":
         print("\nCopying Raspberry Pi ARM64 files")
