@@ -5,7 +5,7 @@ jobs:
     macos:
       xcode: "16.4.0"
 
-    resource_class: m4pro.medium
+    resource_class: m4pro.large
 
     environment:
       DEPOT_TOOLS_UPDATE: "0"
