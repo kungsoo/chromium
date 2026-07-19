@@ -180,11 +180,42 @@ def prepare_checkout(
     gclient = depot_command(depot_tools, "gclient")
 
     print(f"\nCurrent Thorium version is: {THORIUM_VERSION}\n")
-    print(f"Checking out tags/{THORIUM_VERSION} in {chromium_src}")
+    print(f"\nFetching tag {THORIUM_VERSION} in {chromium_src}")
 
-    run([git, "clean", "-ffd"], chromium_src)
+    run(
+        [
+            git,
+            "fetch",
+            "origin",
+            f"refs/tags/{THORIUM_VERSION}:refs/tags/{THORIUM_VERSION}",
+            "--depth=1",
+        ],
+        chromium_src,
+    )
+
+    print(f"\nChecking out tags/{THORIUM_VERSION}", flush=True)
+
+    run(
+        [
+            git,
+            "checkout",
+            "-f",
+            f"tags/{THORIUM_VERSION}",
+        ],
+        chromium_src,
+    )
+
+    run(
+        [
+            git,
+            "clean",
+            "-ffd",
+        ],
+        chromium_src,
+    )
 
     print("\ngclient sync", flush=True)
+
     run(
         [
             gclient,
@@ -194,12 +225,20 @@ def prepare_checkout(
             "--nohooks",
             "--no-history",
             "--delete_unversioned_trees",
-            "--revision",
-            f"src@{THORIUM_VERSION}",
+            "--with_branch_heads",
+            "--with_tags",
         ],
         chromium_src,
     )
-    run([git, "clean", "-ffd"], chromium_src)
+
+    run(
+        [
+            git,
+            "clean",
+            "-ffd",
+        ],
+        chromium_src,
+    )
 
     print("\ngclient runhooks", flush=True)
     run([gclient, "runhooks"], chromium_src)
