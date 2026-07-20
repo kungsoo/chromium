@@ -494,7 +494,7 @@ def sync_chromium(
                 "--nohooks",
                 "--no-history",
                 "--delete_unversioned_trees",
-                "-vv",
+                "-vvv",
                 "--revision",
                 f"src@{THORIUM_VERSION}",
             ],
