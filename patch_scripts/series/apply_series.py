@@ -111,7 +111,7 @@ def git_apply_check(apply_dir: Path, patch: Path, reverse: bool = False) -> bool
     if reverse:
         args.append("--reverse")
     cmd = git_apply_command(apply_dir, patch, args)
-    return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    return subprocess.run(cmd).returncode == 0
 
 
 def prepare_temp_index(
