@@ -29,7 +29,7 @@ CHROMIUM_URL = (
     "https://chromium.googlesource.com/chromium/src.git"
 )
 
-THORIUM_VERSION = "150.0.7871.179"
+THORIUM_VERSION = "150.0.7871.128"
 
 EXIT_FAILURE = 111
 

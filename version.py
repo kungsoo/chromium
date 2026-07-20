@@ -28,7 +28,7 @@ from typing import Sequence
 
 
 EXIT_FAILURE = 111
-THORIUM_VERSION = "150.0.7871.179"
+THORIUM_VERSION = "150.0.7871.128"
 PGO_GS_URL = "chromium-optimization-profiles/pgo_profiles"
 PGO_TARGETS = (
     "win-arm64",
