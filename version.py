@@ -2,7 +2,20 @@
 
 # Copyright (c) 2026 Alex313031 and gz83.
 
-"""Check out and prepare Chromium for the current Thorium version."""
+"""Install sysroots and download PGO profiles for the current Thorium version.
+
+This step assumes `bootstrap.py` has already run: the Chromium checkout at
+`--chromium-src` already exists, is already synced with gclient, and is
+already pinned to the tag in THORIUM_VERSION. This script does not repeat
+the fetch / checkout / clean / gclient sync / gclient runhooks steps --
+those already happened in bootstrap.py, and re-running `gclient sync
+--revision src@<tag>` here would hit the exact same "gclient does an
+unbounded full-history fetch when given a tag name instead of a commit
+SHA" issue that bootstrap.py works around (see resolve_pinned_commit()
+there). Instead, this script does a fast, local, no-network check that the
+checkout is where it should be, then moves on to the work bootstrap.py
+doesn't do: sysroots and PGO profiles.
+"""
 
 import argparse
 import os
@@ -80,7 +93,10 @@ def host_pgo_targets() -> tuple[str, ...]:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Check out the Chromium tag used by the current Thorium version."
+        description=(
+            "Install sysroots and download PGO profiles for the Chromium "
+            "checkout prepared by bootstrap.py."
+        )
     )
     parser.add_argument(
         "--chromium-src",
@@ -122,14 +138,6 @@ def find_command(name: str) -> str:
     return executable
 
 
-def depot_command(depot_tools: Path, name: str) -> str:
-    suffix = ".bat" if os.name == "nt" else ""
-    command = depot_tools / f"{name}{suffix}"
-    if not command.is_file():
-        raise VersionError(f"depot_tools command does not exist: {command}")
-    return str(command)
-
-
 def run(command: Sequence[str], cwd: Path) -> None:
     printable = subprocess.list2cmdline(command)
     print(f"\n[{cwd}] {printable}", flush=True)
@@ -141,6 +149,26 @@ def run(command: Sequence[str], cwd: Path) -> None:
         raise VersionError(
             f"command failed with exit code {error.returncode}: {printable}"
         ) from error
+
+
+def capture(command: Sequence[str], cwd: Path) -> str:
+    printable = subprocess.list2cmdline(command)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise VersionError(f"could not run {printable}: {error}") from error
+    except subprocess.CalledProcessError as error:
+        raise VersionError(
+            f"command failed with exit code {error.returncode}: {printable}\n"
+            f"{error.stderr}"
+        ) from error
+    return result.stdout
 
 
 def require_directory(path: Path, description: str) -> None:
@@ -159,7 +187,45 @@ def require_file(path: Path, description: str) -> None:
         raise VersionError(f"{description} does not exist: {path}")
 
 
-def prepare_checkout(
+def verify_pinned_checkout(chromium_src: Path) -> None:
+    """Fast, local, no-network check that bootstrap.py already put the
+    checkout where this script expects it to be. This replaces the
+    fetch/checkout/clean/gclient-sync steps the old version of this script
+    used to repeat -- those are bootstrap.py's job."""
+
+    git = find_command("git")
+
+    head = capture(
+        [git, "-c", "color.ui=never", "rev-parse", "HEAD"],
+        chromium_src,
+    ).strip().lower()
+
+    try:
+        pinned = capture(
+            [
+                git,
+                "-c",
+                "color.ui=never",
+                "rev-parse",
+                "--verify",
+                f"{THORIUM_VERSION}^{{commit}}",
+            ],
+            chromium_src,
+        ).strip().lower()
+    except VersionError as error:
+        raise VersionError(
+            f"tag {THORIUM_VERSION} not found in {chromium_src}; "
+            "run bootstrap.py first"
+        ) from error
+
+    if head != pinned:
+        raise VersionError(
+            f"{chromium_src} is checked out at {head}, not the pinned "
+            f"Thorium tag {THORIUM_VERSION} ({pinned}); run bootstrap.py first"
+        )
+
+
+def prepare_pgo(
     chromium_src: Path,
     depot_tools: Path,
     pgo_targets: Sequence[str],
@@ -176,74 +242,9 @@ def prepare_checkout(
         "depot_tools download_from_google_storage.py",
     )
 
-    git = find_command("git")
-    gclient = depot_command(depot_tools, "gclient")
-
     print(f"\nCurrent Thorium version is: {THORIUM_VERSION}\n")
-    print(f"\nFetching tag {THORIUM_VERSION} in {chromium_src}")
 
-    run(
-        [
-            git,
-            "fetch",
-            "origin",
-            f"refs/tags/{THORIUM_VERSION}:refs/tags/{THORIUM_VERSION}",
-            "--depth=1",
-        ],
-        chromium_src,
-    )
-
-    print(f"\nChecking out tags/{THORIUM_VERSION}", flush=True)
-
-    run(
-        [
-            git,
-            "checkout",
-            "-f",
-            f"tags/{THORIUM_VERSION}",
-        ],
-        chromium_src,
-    )
-
-    run(
-        [
-            git,
-            "clean",
-            "-ffd",
-        ],
-        chromium_src,
-    )
-
-    print("\ngclient sync", flush=True)
-
-    run(
-        [
-            gclient,
-            "sync",
-            "--force",
-            "--reset",
-            "--nohooks",
-            "--no-history",
-            "--with_tags",
-            "--with_branch_heads",
-            "--delete_unversioned_trees",
-            "--revision",
-            f"src@{THORIUM_VERSION}",
-        ],
-        chromium_src.parent,
-    )
-
-    run(
-        [
-            git,
-            "clean",
-            "-ffd",
-        ],
-        chromium_src,
-    )
-
-    print("\ngclient runhooks", flush=True)
-    run([gclient, "runhooks"], chromium_src.parent)
+    verify_pinned_checkout(chromium_src)
 
     sysroot_arches = sysroot_architectures()
     if sysroot_arches:
@@ -306,7 +307,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         pgo_targets = list(dict.fromkeys(args.pgo_targets or host_pgo_targets()))
-        prepare_checkout(
+        prepare_pgo(
             args.chromium_src,
             args.depot_tools,
             pgo_targets,
