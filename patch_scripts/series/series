@@ -195,7 +195,6 @@ other/ungoogled/core/ungoogled-chromium/disable-untraceable-urls.patch
 other/ungoogled/core/ungoogled-chromium/disable-profile-avatar-downloading.patch
 other/ungoogled/core/ungoogled-chromium/disable-gcm.patch
 other/ungoogled/core/ungoogled-chromium/disable-domain-reliability.patch
-other/ungoogled/core/ungoogled-chromium/block-trk-and-subdomains.patch
 other/ungoogled/core/ungoogled-chromium/disable-gaia.patch
 other/ungoogled/core/ungoogled-chromium/disable-fonts-googleapis-references.patch
 other/ungoogled/core/ungoogled-chromium/disable-webstore-urls.patch
