@@ -201,7 +201,6 @@ other/ungoogled/core/ungoogled-chromium/fix-learn-doubleclick-hsts.patch
 other/ungoogled/core/ungoogled-chromium/disable-ai.patch
 other/ungoogled/core/ungoogled-chromium/fix-building-with-prunned-binaries.patch
 other/ungoogled/core/ungoogled-chromium/disable-network-time-tracker.patch
-other/ungoogled/core/ungoogled-chromium/fix-building-without-safebrowsing.patch
 other/ungoogled/core/ungoogled-chromium/remove-unused-preferences-fields.patch
 other/ungoogled/core/ungoogled-chromium/block-requests.patch
 other/ungoogled/core/ungoogled-chromium/doh-changes.patch
