@@ -22,7 +22,7 @@ DEPOT_TOOLS_URL = (
 )
 
 THORIUM_URL = (
-    "https://github.com/Alex313031/thorium.git"
+    "https://github.com/kungsoo/chromium.git"
 )
 
 CHROMIUM_URL = (

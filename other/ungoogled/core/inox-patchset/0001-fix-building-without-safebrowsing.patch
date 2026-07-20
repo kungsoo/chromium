@@ -94,14 +94,14 @@
    public = [
      "chrome_controller_client.h",
      "metrics/bundled_settings_metrics_provider.h",
-@@ -105,6 +106,7 @@ static_library("safe_browsing") {
+@@ -105,7 +106,4 @@ static_library("safe_browsing") {
      "//services/metrics/public/cpp:ukm_builders",
      "//services/preferences/public/cpp",
    ]
-+  }
- 
-   if (enable_extensions) {
-     deps += [ "//chrome/browser/ui/web_applications" ]
+-
+-  if (enable_extensions) {
+-    deps += [ "//chrome/browser/ui/web_applications" ]
+   }
 @@ -692,6 +694,7 @@ static_library("advanced_protection") {
  }
  

@@ -73,10 +73,6 @@ other/disable-startup-warning-infobars.patch
 other/disable-default-browser-prompt.patch
 other/thorium-chrome-urls-page.patch
 other/thorium-flags-registration.patch
-other/thorium-internal-url-scheme-alias.patch
-other/thorium-internal-url-scheme-branding.patch
-other/thorium-flags-page-branding.patch
-other/thorium-version-page-branding.patch
 other/thorium-vector-icons.patch
 other/thorium-views-vector-icons.patch
 other/thorium-app-menu-icons.patch
