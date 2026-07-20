@@ -705,6 +705,27 @@ def bootstrap(
     )
 
 
+    # NOTE: DEPOT_TOOLS_DIR / PATH must be set *before*
+    # prepare_depot_tools() runs, not after. prepare_depot_tools()
+    # invokes depot_tools/ensure_bootstrap, which shells out through
+    # gsutil.py -> luci-auth. depot_tools only resolves the
+    # `luci-auth` executable correctly once depot_tools itself is on
+    # PATH, so doing this afterwards (as in the original ordering)
+    # causes ensure_bootstrap to fail with a subprocess lookup error
+    # for luci-auth. It's safe to add depot_tools to PATH here even
+    # before it's cloned -- it's just an inert entry until
+    # prepare_depot_tools() populates the directory.
+    os.environ["DEPOT_TOOLS_DIR"] = str(
+        args.depot_tools
+    )
+
+    os.environ["PATH"] = (
+        str(args.depot_tools)
+        + os.pathsep
+        + os.environ.get("PATH", "")
+    )
+
+
     prepare_depot_tools(
         git,
         args.depot_tools,
@@ -714,17 +735,6 @@ def bootstrap(
     prepare_thorium(
         git,
         args.thorium_root,
-    )
-
-
-    os.environ["DEPOT_TOOLS_DIR"] = str(
-        args.depot_tools
-    )
-
-    os.environ["PATH"] = (
-        str(args.depot_tools)
-        + os.pathsep
-        + os.environ.get("PATH", "")
     )
 
 
