@@ -2,16 +2,7 @@
 
 # Copyright (c) 2026 Alex313031 and gz83.
 
-"""Download the repositories needed to build Thorium.
-
-This script only bootstraps:
-- depot_tools
-- Thorium source
-- Chromium source (shallow fetch only)
-
-Chromium version checkout, gclient sync, hooks,
-sysroots and PGO profiles are handled by version.py.
-"""
+"""Copy Thorium overlays and apply its patch series to Chromium."""
 
 import argparse
 import os
@@ -21,21 +12,23 @@ import shutil
 import stat
 import subprocess
 import sys
-import time
 from typing import Sequence
 
 
-DEPOT_TOOLS_URL = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-
-THORIUM_URL = "https://github.com/kungsoo/chromium.git"
-
 EXIT_FAILURE = 111
+PGO_GS_URL = "chromium-optimization-profiles/pgo_profiles"
+OVERLAY_COMPONENTS = ("chrome", "components", "content", "third_party", "ui")
+SIMD_PROFILES = {
+    "avx512": ("AVX512", "wrapper-avx512", None),
+    "avx2": ("AVX2", "wrapper-avx2", None),
+    "sse4": ("SSE4.1", "wrapper-sse4", None),
+    "sse3": ("SSE3", "wrapper-sse3", "win32"),
+    "sse2": ("SSE2", "wrapper-sse2", "win32"),
+}
 
-FETCH_INCOMPLETE_MARKER = ".thorium-fetch-incomplete"
 
-
-class BootstrapError(RuntimeError):
-    """An expected repository bootstrap failure."""
+class SetupError(RuntimeError):
+    """An expected setup or copy failure."""
 
 
 def environment_path(value: str) -> Path:
@@ -44,641 +37,500 @@ def environment_path(value: str) -> Path:
 
 def default_chromium_src() -> Path:
     configured = os.environ.get("CR_DIR")
-
     if configured:
         return environment_path(configured)
-
     if os.name == "nt":
         return Path("C:/src/chromium/src")
-
     return Path.home() / "chromium" / "src"
 
 
 def default_thorium_root() -> Path:
     configured = os.environ.get("THOR_DIR")
-
     if configured:
         return environment_path(configured)
-
     return Path.home() / "thorium"
 
 
-def default_depot_tools() -> Path:
-    configured = os.environ.get("DEPOT_TOOLS_DIR")
+def thor_ver_source(thorium_root: Path, profile: str) -> Path:
+    if profile == "woa":
+        return thorium_root / "arm" / "thor_ver"
+    if profile in SIMD_PROFILES:
+        source_name, _, _ = SIMD_PROFILES[profile]
+        return thorium_root / "other" / source_name / "thor_ver"
+    return thorium_root / "infra" / "thor_ver"
 
-    if configured:
-        return environment_path(configured)
 
-    gclient = shutil.which("gclient")
+def pak_source(thorium_root: Path, profile: str) -> Path:
+    filename = "pak_arm64" if profile == "raspi" else "pak"
+    return thorium_root / "pak_src" / "binaries" / filename
 
-    if gclient:
-        return Path(gclient).resolve().parent
 
-    if os.name == "nt":
-        return Path("C:/src/depot_tools")
-
-    return Path.home() / "depot_tools"
+def profile_downloads_pgo(profile: str) -> bool:
+    if profile in ("woa", "android"):
+        return True
+    if profile in SIMD_PROFILES:
+        return SIMD_PROFILES[profile][2] is not None
+    return False
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=("Download depot_tools, Thorium and Chromium source.")
+        description="Copy Thorium files and patches over the Chromium tree.",
+        epilog=(
+            "For optimized LLVM builds, run infra/build_llvm.py after this "
+            "setup script and before building."
+        ),
     )
-
     parser.add_argument(
         "--chromium-src",
         type=environment_path,
         default=default_chromium_src(),
         metavar="PATH",
-        help=("Chromium src directory " "(default: CR_DIR or platform default)"),
+        help="Chromium src directory (default: CR_DIR or the platform default)",
     )
-
     parser.add_argument(
         "--thorium-root",
         type=environment_path,
         default=default_thorium_root(),
         metavar="PATH",
-        help=("Thorium checkout directory " "(default: THOR_DIR or ~/thorium)"),
+        help="Thorium repository root (default: THOR_DIR or ~/thorium)",
     )
-
-    parser.add_argument(
-        "--depot-tools",
-        type=environment_path,
-        default=default_depot_tools(),
-        metavar="PATH",
-        help=("depot_tools checkout directory"),
+    profiles = parser.add_mutually_exclusive_group()
+    profiles.add_argument(
+        "--mac",
+        "--macos",
+        action="store_const",
+        const="mac",
+        dest="profile",
+        help="prepare a macOS build",
     )
-
-    parser.add_argument(
-        "--no-history",
-        action="store_true",
-        default=True,
-        help=("fetch Chromium without full Git history"),
+    profiles.add_argument(
+        "--raspi",
+        "--arm64",
+        action="store_const",
+        const="raspi",
+        dest="profile",
+        help="prepare a Raspberry Pi ARM64 build",
     )
-
-    parser.add_argument(
-        "--skip-build-deps",
-        action="store_true",
-        help=("do not install Linux build dependencies"),
+    profiles.add_argument(
+        "--woa",
+        action="store_const",
+        const="woa",
+        dest="profile",
+        help="prepare a Windows on ARM64 build",
     )
-
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help=("skip interactive confirmation"),
+    for option, profile, description in (
+        ("--avx512", "avx512", "an AVX-512"),
+        ("--avx2", "avx2", "an AVX2"),
+        ("--sse4", "sse4", "an SSE4.1"),
+        ("--sse3", "sse3", "an SSE3"),
+        ("--sse2", "sse2", "a 32-bit SSE2"),
+    ):
+        profiles.add_argument(
+            option,
+            action="store_const",
+            const=profile,
+            dest="profile",
+            help=f"prepare {description} build",
+        )
+    profiles.add_argument(
+        "--android",
+        action="store_const",
+        const="android",
+        dest="profile",
+        help="prepare an Android build",
     )
-
+    profiles.add_argument(
+        "--cros",
+        action="store_const",
+        const="cros",
+        dest="profile",
+        help="prepare a ChromiumOS build",
+    )
+    parser.set_defaults(profile="default")
     return parser.parse_args(argv)
 
 
-def find_command(name: str) -> str:
-    executable = shutil.which(name)
-
-    if executable is None:
-        raise BootstrapError(f"required command was not found: {name}")
-
-    return executable
-
-
-def run(
-    command: Sequence[str],
-    cwd: Path,
-) -> None:
-
+def run(command: Sequence[str], cwd: Path) -> None:
     printable = subprocess.list2cmdline(command)
-
-    print(
-        f"\n[{cwd}] {printable}",
-        flush=True,
-    )
-
+    print(f"\n[{cwd}] {printable}", flush=True)
     try:
-        subprocess.run(
-            command,
-            cwd=cwd,
-            check=True,
-        )
-
+        subprocess.run(command, cwd=cwd, check=True)
     except OSError as error:
-        raise BootstrapError(f"could not run {printable}: {error}") from error
-
+        raise SetupError(f"could not run {printable}: {error}") from error
     except subprocess.CalledProcessError as error:
-        raise BootstrapError(
-            f"command failed with exit code " f"{error.returncode}: {printable}"
+        raise SetupError(
+            f"command failed with exit code {error.returncode}: {printable}"
         ) from error
 
 
-def require_checkout(
-    path: Path,
-    description: str,
-) -> None:
-
+def require_directory(path: Path, description: str) -> None:
     if not path.is_dir():
-        raise BootstrapError(f"{description} directory missing: {path}")
+        raise SetupError(f"{description} directory does not exist: {path}")
 
+
+def require_checkout(path: Path, description: str) -> None:
+    require_directory(path, description)
     if not (path / ".git").exists():
-        raise BootstrapError(f"{description} is not a Git checkout: {path}")
+        raise SetupError(f"{description} is not a Git checkout: {path}")
 
 
-def remove_readonly(function, path: str, error_info) -> None:
-    """Retry removal after making Windows read-only path writable."""
-    del error_info
-
-    os.chmod(
-        path,
-        stat.S_IWRITE,
-    )
-
-    function(path)
+def require_file(path: Path, description: str) -> None:
+    if not path.is_file():
+        raise SetupError(f"{description} does not exist: {path}")
 
 
-def remove_incomplete_checkout(
-    path: Path | None,
-) -> str | None:
-
-    if path is None:
-        return None
-
-    if not os.path.lexists(path):
-        return None
-
+def copy_file(source: Path, destination: Path) -> None:
+    require_file(source, "source file")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Copying {source} -> {destination}")
     try:
-        if path.is_symlink() or path.is_file():
-            path.unlink()
-
-        else:
-            shutil.rmtree(
-                path,
-                onerror=remove_readonly,
-            )
-
+        # Keep executable mode bits, but refresh the destination timestamp so
+        # Ninja observes an overlaid source file as changed.
+        shutil.copy(source, destination)
     except OSError as error:
-        return f"could not remove incomplete checkout " f"{path}: {error}"
+        raise SetupError(
+            f"failed to copy {source} to {destination}: {error}"
+        ) from error
 
-    return None
 
-
-def clone_repository(
-    git: str,
-    url: str,
-    destination: Path,
-    *,
-    description: str,
-    marker: str | None = None,
-    recursive: bool = False,
-) -> None:
-
-    staging = None
-
+def copy_tree(source: Path, destination: Path) -> None:
+    require_directory(source, "source")
+    print(f"Copying directory {source} -> {destination}")
     try:
-        destination.parent.mkdir(
-            parents=True,
-            exist_ok=True,
+        shutil.copytree(
+            source,
+            destination,
+            copy_function=shutil.copy,
+            dirs_exist_ok=True,
         )
-
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-
-        staging = destination.with_name(f"{destination.name}.new-{timestamp}")
-
-        index = 1
-
-        while os.path.lexists(staging):
-            staging = destination.with_name(
-                f"{destination.name}.new-{timestamp}-{index}"
-            )
-            index += 1
-
-        command = [
-            git,
-            "clone",
-        ]
-
-        if recursive:
-            command.append("--recursive")
-
-        command.extend(
-            [
-                url,
-                str(staging),
-            ]
-        )
-
-        run(
-            command,
-            destination.parent,
-        )
-
-        require_checkout(
-            staging,
-            description,
-        )
-
-        if marker:
-            if not (staging / marker).exists():
-                raise BootstrapError(f"{description} missing {marker}")
-
-        staging.rename(destination)
-
-    except (
-        BootstrapError,
-        KeyboardInterrupt,
-        OSError,
-    ) as error:
-
-        cleanup_error = remove_incomplete_checkout(staging)
-
-        message = str(error)
-
-        if cleanup_error:
-            message += f"; {cleanup_error}"
-
-        raise BootstrapError(message) from error
+    except OSError as error:
+        raise SetupError(
+            f"failed to copy {source} to {destination}: {error}"
+        ) from error
 
 
-def prepare_depot_tools(
-    git: str,
-    depot_tools: Path,
-) -> None:
-
-    if depot_tools.exists():
-
-        require_checkout(
-            depot_tools,
-            "depot_tools",
-        )
-
-        print(f"\nUsing existing depot_tools: " f"{depot_tools}")
-
+def remove_file(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
         return
+    print(f"Removing {path}")
+    try:
+        path.unlink()
+    except PermissionError:
+        try:
+            path.chmod(stat.S_IWRITE)
+            path.unlink()
+        except OSError as error:
+            raise SetupError(f"failed to remove {path}: {error}") from error
+    except OSError as error:
+        raise SetupError(f"failed to remove {path}: {error}") from error
 
-    clone_repository(
-        git,
-        DEPOT_TOOLS_URL,
-        depot_tools,
-        description="depot_tools",
-        marker="gclient.py",
-    )
+
+def read_art(path: Path) -> None:
+    require_file(path, "ASCII art")
+    try:
+        print(f"\n{path.read_text(encoding='utf-8')}")
+    except (OSError, UnicodeError) as error:
+        raise SetupError(f"failed to read {path}: {error}") from error
 
 
-def prepare_thorium(
-    git: str,
-    thorium_root: Path,
+def apply_patch_series(
+    thorium_root: Path, chromium_src: Path, profile: str
 ) -> None:
-
-    if thorium_root.exists():
-
-        require_checkout(
-            thorium_root,
-            "Thorium",
-        )
-
-        print(f"\nUsing existing Thorium: " f"{thorium_root}")
-
-        run(
-            [
-                git,
-                "submodule",
-                "update",
-                "--init",
-                "--recursive",
-            ],
-            thorium_root,
-        )
-
-        return
-
-    clone_repository(
-        git,
-        THORIUM_URL,
-        thorium_root,
-        description="Thorium",
-        marker="trunk.py",
-        recursive=True,
-    )
-
-
-def depot_command(
-    depot_tools: Path,
-    name: str,
-) -> Path:
-
-    suffix = ".bat" if os.name == "nt" else ""
-
-    command = depot_tools / f"{name}{suffix}"
-
-    if not command.is_file():
-        raise BootstrapError(f"depot_tools command missing: {command}")
-
-    return command
-
-
-def chromium_checkout_state(
-    chromium_src: Path,
-) -> str:
-
-    if not chromium_src.exists():
-        return "absent"
-
-    if chromium_src.is_dir() and (chromium_src / ".git").exists():
-        return "existing"
-
-    return "incomplete"
-
-
-def prepare_chromium(
-    chromium_src: Path,
-    depot_tools: Path,
-    *,
-    no_history: bool,
-) -> str:
-
-    state = chromium_checkout_state(chromium_src)
-
-    if state == "existing":
-
-        print(f"\nUsing existing Chromium checkout: " f"{chromium_src}")
-
-        return "existing"
-
-    if state == "incomplete":
-
-        raise BootstrapError(f"incomplete Chromium checkout: " f"{chromium_src}")
-
-    if chromium_src.name != "src":
-
-        raise BootstrapError("Chromium path must end with src: " f"{chromium_src}")
-
-    checkout_root = chromium_src.parent
-
-    checkout_root.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
+    script = thorium_root / "patch_scripts" / "series" / "apply_series.py"
+    condition = {
+        "woa": "woa",
+        "raspi": "raspi",
+        "sse2": "sse2",
+    }.get(profile)
     command = [
-        str(
-            depot_command(
-                depot_tools,
-                "fetch",
-            )
-        ),
-        "--nohooks",
+        sys.executable,
+        str(script),
+        "--thorium-root",
+        str(thorium_root),
+        "--source-tree",
+        str(chromium_src),
+        "--apply",
     ]
-
-    if no_history:
-        command.append("--no-history")
-
-    command.append("chromium")
-
-    print("\nFetching Chromium source only.")
-
-    print("Checkout, sync and hooks are handled by version.py.")
-
-    run(
-        command,
-        checkout_root,
-    )
-
-    require_checkout(
-        chromium_src,
-        "Chromium",
-    )
-
-    print("\nChromium fetch completed.")
-
-    return "new"
+    if condition:
+        command.extend(("--condition", condition))
+    print("\nApplying Thorium patch series")
+    run(command, thorium_root)
 
 
-def install_linux_dependencies(
-    chromium_src: Path,
-    *,
-    skip: bool,
-) -> None:
+def apply_grd_rebase(thorium_root: Path, chromium_src: Path) -> None:
+    grd_rebase = thorium_root / "patch_scripts" / "grd_rebase"
+    config = grd_rebase / "config"
+    sync_script = grd_rebase / "sync_grd_strings.py"
+    merge_script = grd_rebase / "merge_thorium_xtb.py"
 
-    if skip:
-        print("\nSkipping Linux build dependencies.")
-        return
-
-    if platform.system() != "Linux":
-
-        print("\nSkipping Linux dependencies on non-Linux host.")
-
-        return
-
-    find_command("sudo")
-
-    installer = chromium_src / "build" / "install-build-deps.sh"
-
-    if not installer.is_file():
-
-        raise BootstrapError(f"Chromium dependency installer missing: " f"{installer}")
-
-    print("\nInstalling Linux build dependencies.")
-
+    print("\nApplying Thorium GRD/XTB rebase")
     run(
         [
-            str(installer),
-            "--arm",
-            "--chromeos-fonts",
+            sys.executable,
+            str(sync_script),
+            str(chromium_src),
+            "--file-allowlist",
+            str(config / "file_allowlist.csv"),
+            "--message-allowlist",
+            str(config / "message_allowlist.csv"),
+            "--feature-message-ownership",
+            str(config / "feature_patch_message_ownership.csv"),
+        ],
+        thorium_root,
+    )
+    run([sys.executable, str(merge_script), str(chromium_src)], thorium_root)
+
+
+def download_pgo(chromium_src: Path, target: str) -> None:
+    updater = chromium_src / "tools" / "update_pgo_profiles.py"
+    print(f"\nDownloading Chromium PGO profile: {target}")
+    run(
+        [
+            sys.executable,
+            str(updater),
+            f"--target={target}",
+            "update",
+            f"--gs-url-base={PGO_GS_URL}",
         ],
         chromium_src,
     )
 
 
-def validate_paths(
-    chromium_src: Path,
+def copy_version_metadata(
     thorium_root: Path,
-    depot_tools: Path,
+    chromium_src: Path,
+    source_directory: Path,
+    wrapper_name: str | None = None,
 ) -> None:
-
-    paths = (
-        ("Chromium", chromium_src.parent),
-        ("Thorium", thorium_root),
-        ("depot_tools", depot_tools),
+    text_resources = chromium_src / "ui" / "webui" / "resources" / "text"
+    copy_file(
+        source_directory / "thorium_version.txt",
+        text_resources / "thorium_version.txt",
     )
-
-    for index, (left_name, left_path) in enumerate(paths):
-
-        for right_name, right_path in paths[index + 1 :]:
-
-            if left_path.is_relative_to(right_path) or right_path.is_relative_to(
-                left_path
-            ):
-
-                raise BootstrapError(
-                    f"checkout paths overlap: "
-                    f"{left_name}={left_path}, "
-                    f"{right_name}={right_path}"
-                )
+    if wrapper_name and sys.platform.startswith("linux"):
+        copy_file(
+            thorium_root / "other" / "thor_ver_linux" / wrapper_name,
+            chromium_src / "chrome" / "installer" / "linux" / "common" / "wrapper",
+        )
 
 
-def resolve_paths(
-    args: argparse.Namespace,
-) -> None:
-
-    args.chromium_src = args.chromium_src.expanduser().resolve()
-
-    args.thorium_root = args.thorium_root.expanduser().resolve()
-
-    args.depot_tools = args.depot_tools.expanduser().resolve()
-
-    validate_paths(
-        args.chromium_src,
-        args.thorium_root,
-        args.depot_tools,
-    )
-
-
-def confirm(
-    args: argparse.Namespace,
-) -> None:
-
-    if args.yes:
+def prepare_profile(profile: str, thorium_root: Path, chromium_src: Path) -> None:
+    if profile == "default":
+        return
+    text_resources = chromium_src / "ui" / "webui" / "resources" / "text"
+    if profile == "mac":
+        print("\nCopying files for macOS")
+        copy_file(
+            thorium_root / "other" / "Mac" / "thorium_version.txt",
+            text_resources / "thorium_version.txt",
+        )
+        return
+    if profile == "raspi":
+        print("\nCopying Raspberry Pi ARM64 files")
+        copy_tree(
+            thorium_root / "arm" / "third_party" / "widevine",
+            chromium_src / "third_party" / "widevine",
+        )
+        copy_file(
+            thorium_root / "arm" / "thorium_version.txt",
+            text_resources / "thorium_version.txt",
+        )
+        copy_file(
+            thorium_root / "other" / "thor_ver_linux" / "wrapper-raspi",
+            chromium_src / "chrome" / "installer" / "linux" / "common" / "wrapper",
+        )
+        read_art(thorium_root / "logos" / "raspi_ascii_art.txt")
+        return
+    if profile == "woa":
+        print("\nCopying Windows on ARM64 files")
+        copy_version_metadata(thorium_root, chromium_src, thorium_root / "arm")
+        download_pgo(chromium_src, "win-arm64")
         return
 
-    if not sys.stdin.isatty():
-
-        raise BootstrapError("interactive confirmation unavailable; " "use --yes")
-
-    print("\nThis will download:")
-
-    print(f"  depot_tools: {args.depot_tools}")
-
-    print(f"  Thorium:     {args.thorium_root}")
-
-    print(f"  Chromium:    {args.chromium_src}")
-
-    input("Press Enter to continue...")
-
-
-def bootstrap(
-    args: argparse.Namespace,
-) -> None:
-
-    chromium_src = args.chromium_src
-    thorium_root = args.thorium_root
-    depot_tools = args.depot_tools
-
-    if os.name != "nt":
-        os.umask(0o022)
-
-    git = find_command("git")
-
-    prepare_depot_tools(
-        git,
-        depot_tools,
-    )
-
-    prepare_thorium(
-        git,
-        thorium_root,
-    )
-
-    os.environ["DEPOT_TOOLS_DIR"] = str(depot_tools)
-
-    os.environ["PATH"] = (
-        str(depot_tools)
-        + os.pathsep
-        + os.environ.get(
-            "PATH",
-            "",
+    if profile in SIMD_PROFILES:
+        source_name, wrapper_name, pgo_target = SIMD_PROFILES[profile]
+        print(f"\nCopying {source_name} build files")
+        copy_version_metadata(
+            thorium_root,
+            chromium_src,
+            thorium_root / "other" / source_name,
+            wrapper_name,
         )
-    )
+        if pgo_target:
+            download_pgo(chromium_src, pgo_target)
+        return
 
-    chromium_state = prepare_chromium(
-        chromium_src,
-        depot_tools,
-        no_history=args.no_history,
-    )
-
-    install_linux_dependencies(
-        chromium_src,
-        skip=args.skip_build_deps,
-    )
-
-    print("\nBootstrap completed.")
-
-    print(f"Chromium source: {chromium_src}")
-
-    print(f"Thorium source:  {thorium_root}")
-
-    print(f"depot_tools:     {depot_tools}")
-
-    print("\nNext step:")
-
-    print(
-        f"{sys.executable} "
-        f"{thorium_root / 'version.py'} "
-        f"--chromium-src={chromium_src} "
-        f"--depot-tools={depot_tools}"
-    )
-
-
-def main(
-    argv: Sequence[str] | None = None,
-) -> int:
-
-    if sys.version_info < (3, 11):
-
-        print(
-            "error: Python 3.11+ required",
-            file=sys.stderr,
+    if profile == "android":
+        print("\nRemoving replaced Android launcher resources")
+        android_resources = (
+            "chrome/android/java/res_base/drawable-v26/ic_launcher.xml",
+            "chrome/android/java/res_base/drawable-v26/ic_launcher_round.xml",
+            "chrome/android/java/res_chromium_base/mipmap-mdpi/"
+            "layered_app_icon_background.png",
+            "chrome/android/java/res_chromium_base/mipmap-xhdpi/"
+            "layered_app_icon_background.png",
+            "chrome/android/java/res_chromium_base/mipmap-xxxhdpi/"
+            "layered_app_icon_background.png",
+            "chrome/android/java/res_chromium_base/mipmap-nodpi/"
+            "layered_app_icon_foreground.xml",
+            "chrome/android/java/res_chromium_base/mipmap-hdpi/"
+            "layered_app_icon_background.png",
+            "chrome/android/java/res_chromium_base/mipmap-xxhdpi/"
+            "layered_app_icon_background.png",
         )
+        for relative_path in android_resources:
+            remove_file(chromium_src / relative_path)
+        download_pgo(chromium_src, "android-arm32")
+        return
+    if profile == "cros":
+        print("\nCopying ChromiumOS build files")
+        copy_file(
+            thorium_root / "other" / "CrOS" / "thorium_version.txt",
+            text_resources / "thorium_version.txt",
+        )
+        return
 
-        return 2
 
-    if platform.system() not in (
-        "Linux",
-        "Darwin",
-        "Windows",
+def validate_inputs(profile: str, thorium_root: Path, chromium_src: Path) -> None:
+    require_checkout(chromium_src, "Chromium")
+    require_file(chromium_src / "BUILD.gn", "Chromium root BUILD.gn")
+
+    for component in OVERLAY_COMPONENTS:
+        require_directory(thorium_root / "src" / component, "overlay source")
+    for directory in (
+        thorium_root / "thorium_shell",
+        thorium_root / "pak_src" / "binaries" / "pak-win",
     ):
+        require_directory(directory, "Thorium setup source")
+    for path in (
+        pak_source(thorium_root, profile),
+        thor_ver_source(thorium_root, profile),
+        thorium_root / "logos" / "thorium_ascii_art.txt",
+        thorium_root / "patch_scripts" / "series" / "apply_series.py",
+        thorium_root / "patch_scripts" / "grd_rebase" / "sync_grd_strings.py",
+        thorium_root / "patch_scripts" / "grd_rebase" / "merge_thorium_xtb.py",
+        thorium_root
+        / "patch_scripts"
+        / "grd_rebase"
+        / "config"
+        / "file_allowlist.csv",
+        thorium_root
+        / "patch_scripts"
+        / "grd_rebase"
+        / "config"
+        / "message_allowlist.csv",
+        thorium_root
+        / "patch_scripts"
+        / "grd_rebase"
+        / "config"
+        / "feature_patch_message_ownership.csv",
+    ):
+        require_file(path, "Thorium setup input")
 
-        print(
-            "error: unsupported platform",
-            file=sys.stderr,
+    profile_files: tuple[Path, ...] = ()
+    profile_directories: tuple[Path, ...] = ()
+    if profile == "mac":
+        profile_files = (thorium_root / "other" / "Mac" / "thorium_version.txt",)
+    elif profile == "raspi":
+        profile_directories = (thorium_root / "arm" / "third_party" / "widevine",)
+        profile_files = (
+            thorium_root / "arm" / "thorium_version.txt",
+            thorium_root / "other" / "thor_ver_linux" / "wrapper-raspi",
+            thorium_root / "logos" / "raspi_ascii_art.txt",
+        )
+    elif profile == "woa":
+        profile_files = (
+            thorium_root / "arm" / "thorium_version.txt",
+        )
+    elif profile in SIMD_PROFILES:
+        source_name, wrapper_name, _ = SIMD_PROFILES[profile]
+        profile_files = (
+            thorium_root / "other" / source_name / "thorium_version.txt",
+        )
+        if sys.platform.startswith("linux"):
+            profile_files += (
+                thorium_root / "other" / "thor_ver_linux" / wrapper_name,
+            )
+    elif profile == "cros":
+        profile_files = (
+            thorium_root / "other" / "CrOS" / "thorium_version.txt",
+        )
+    elif profile not in ("default", "android"):
+        raise SetupError(f"unsupported setup profile: {profile}")
+
+    if profile_downloads_pgo(profile):
+        profile_files += (
+            chromium_src / "tools" / "update_pgo_profiles.py",
+            chromium_src
+            / "third_party"
+            / "depot_tools"
+            / "download_from_google_storage.py",
         )
 
+    for directory in profile_directories:
+        require_directory(directory, "profile source")
+    for path in profile_files:
+        require_file(path, "profile input")
+
+
+def setup(thorium_root: Path, chromium_src: Path, profile: str) -> None:
+    thorium_root = thorium_root.expanduser().resolve()
+    chromium_src = chromium_src.expanduser().resolve()
+
+    require_directory(thorium_root, "Thorium")
+    validate_inputs(profile, thorium_root, chromium_src)
+
+    output = chromium_src / "out" / "thorium"
+    try:
+        output.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise SetupError(f"failed to create {output}: {error}") from error
+
+    print("\nCopying Thorium source overlays over the Chromium tree")
+    for component in OVERLAY_COMPONENTS:
+        copy_tree(thorium_root / "src" / component, chromium_src / component)
+    copy_tree(thorium_root / "thorium_shell", output)
+    copy_file(pak_source(thorium_root, profile), output / "pak")
+    copy_tree(thorium_root / "pak_src" / "binaries" / "pak-win", output)
+
+    apply_patch_series(thorium_root, chromium_src, profile)
+    apply_grd_rebase(thorium_root, chromium_src)
+
+    print("\nCopying build metadata to out/thorium")
+    copy_file(thor_ver_source(thorium_root, profile), output / "thor_ver")
+    prepare_profile(profile, thorium_root, chromium_src)
+
+    print("\nDone!")
+    read_art(thorium_root / "logos" / "thorium_ascii_art.txt")
+    print("\nEnjoy Thorium!\n")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    if sys.version_info < (3, 11):
+        print("error: Python 3.11 or newer is required", file=sys.stderr)
+        return 2
+    if platform.system() not in ("Linux", "Darwin", "Windows"):
+        print("error: only Linux, macOS, and Windows are supported", file=sys.stderr)
         return 2
 
     args = parse_args(sys.argv[1:] if argv is None else argv)
-
     try:
-
-        resolve_paths(args)
-
-        confirm(args)
-
-        bootstrap(args)
-
-    except BootstrapError as error:
-
-        print(
-            f"{Path(sys.argv[0]).name}: {error}",
-            file=sys.stderr,
-        )
-
+        setup(args.thorium_root, args.chromium_src, args.profile)
+    except SetupError as error:
+        print(f"{Path(sys.argv[0]).name}: {error}", file=sys.stderr)
         return EXIT_FAILURE
-
     except OSError as error:
-
         print(
-            f"{Path(sys.argv[0]).name}: filesystem error: {error}",
+            f"{Path(sys.argv[0]).name}: filesystem operation failed: {error}",
             file=sys.stderr,
         )
-
         return EXIT_FAILURE
-
     except KeyboardInterrupt:
-
-        print(
-            "\nInterrupted.",
-            file=sys.stderr,
-        )
-
+        print(f"\n{Path(sys.argv[0]).name}: interrupted", file=sys.stderr)
         return 130
-
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
