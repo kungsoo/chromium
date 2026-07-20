@@ -210,4 +210,3 @@ other/ungoogled/core/ungoogled-chromium/remove-navigation-source-param.patch
 
 # Core Aduio
 other/mac-audio-output-device-uid-switch.patch
-other/mac-audio-output-device-tab-menu.patch
