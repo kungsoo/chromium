@@ -312,16 +312,29 @@ def prepare_depot_tools(
             "depot_tools",
         )
 
-        return
+    else:
+
+        clone_repository(
+            git,
+            DEPOT_TOOLS_URL,
+            depot_tools,
+        )
 
 
-    clone_repository(
-        git,
-        DEPOT_TOOLS_URL,
+    ensure_bootstrap = depot_tools / "ensure_bootstrap"
+
+    if not ensure_bootstrap.exists():
+        raise BootstrapError(
+            f"missing bootstrap script: {ensure_bootstrap}"
+        )
+
+
+    run(
+        [
+            str(ensure_bootstrap),
+        ],
         depot_tools,
     )
-
-
 
 def prepare_thorium(
     git: str,
