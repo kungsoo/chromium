@@ -205,7 +205,6 @@ other/ungoogled/core/ungoogled-chromium/block-requests.patch
 other/ungoogled/core/ungoogled-chromium/doh-changes.patch
 other/ungoogled/core/ungoogled-chromium/extensions-manifestv2.patch
 other/ungoogled/core/ungoogled-chromium/remove-f1-shortcut.patch
-other/ungoogled/core/ungoogled-chromium/move-js-optimizer-unfamiliar-sites.patch
 other/ungoogled/core/ungoogled-chromium/build-with-wasm-rollup.patch
 other/ungoogled/core/ungoogled-chromium/remove-navigation-source-param.patch
 
