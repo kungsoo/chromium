@@ -56,7 +56,7 @@ jobs:
             source $BASH_ENV
 
             cd $HOME/project
-            python3 $HOME/project/build.py --thorium-root $HOME/project
+            python3 $HOME/project/build.py --thorium-root $HOME/project --expect-os mac --expect-cpu arm64
 
 
       - run:
