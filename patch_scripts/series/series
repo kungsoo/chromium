@@ -194,7 +194,6 @@ other/ungoogled/core/ungoogled-chromium/disable-domain-reliability.patch
 other/ungoogled/core/ungoogled-chromium/disable-gaia.patch
 other/ungoogled/core/ungoogled-chromium/disable-fonts-googleapis-references.patch
 other/ungoogled/core/ungoogled-chromium/fix-learn-doubleclick-hsts.patch
-other/ungoogled/core/ungoogled-chromium/disable-webrtc-log-uploader.patch
 other/ungoogled/core/ungoogled-chromium/disable-ai.patch
 other/ungoogled/core/ungoogled-chromium/fix-building-with-prunned-binaries.patch
 other/ungoogled/core/ungoogled-chromium/disable-network-time-tracker.patch
