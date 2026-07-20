@@ -336,6 +336,16 @@ def prepare_depot_tools(
         depot_tools,
     )
 
+
+    python_bin = depot_tools / "python3_bin_reldir.txt"
+
+    if not python_bin.exists():
+
+        raise BootstrapError(
+            "depot_tools bootstrap failed: "
+            "python3_bin_reldir.txt missing"
+        )
+
 def prepare_thorium(
     git: str,
     thorium_root: Path,
