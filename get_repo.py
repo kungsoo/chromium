@@ -328,6 +328,60 @@ def prepare_thorium(
 
 
 
+def ensure_local_tag(
+    git: str,
+    chromium_src: Path,
+    tag: str,
+):
+    # A shallow `git clone --depth=1 --branch <tag>` checks out the
+    # correct commit, but does not reliably leave behind a local tag
+    # ref for it (depends on how the remote handles tag refs for a
+    # shallow fetch). Without a local ref that resolves the tag name,
+    # `gclient sync --revision src@<tag>` cannot verify the revision
+    # via `git rev-parse --verify <tag>`. When that verification
+    # fails, gclient widens remote.origin.fetch to all branches and
+    # runs an *unbounded* `git fetch origin --prune --no-tags` to
+    # search the full history for the revision -- on a repo the size
+    # of Chromium's src this can take an hour or more and looks like
+    # gclient "hanging" on "Still working on: src".
+    #
+    # Tagging the current HEAD locally (which is already the exact
+    # commit we cloned) lets that verification succeed immediately,
+    # so gclient skips the expensive full-history fetch.
+    check = subprocess.run(
+        [
+            git,
+            "-c",
+            "color.ui=never",
+            "rev-parse",
+            "--quiet",
+            "--verify",
+            tag,
+        ],
+        cwd=chromium_src,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    if check.returncode != 0:
+
+        print(
+            f"\nLocal tag '{tag}' missing after shallow clone; "
+            "creating it to avoid a full-history gclient fetch"
+        )
+
+        run(
+            [
+                git,
+                "tag",
+                tag,
+                "HEAD",
+            ],
+            chromium_src,
+        )
+
+
+
 def prepare_chromium_clone(
     git: str,
     chromium_src: Path,
@@ -342,6 +396,12 @@ def prepare_chromium_clone(
 
         print(
             f"\nUsing Chromium checkout: {chromium_src}"
+        )
+
+        ensure_local_tag(
+            git,
+            chromium_src,
+            THORIUM_VERSION,
         )
 
         return
@@ -391,6 +451,12 @@ def prepare_chromium_clone(
     require_checkout(
         chromium_src,
         "Chromium",
+    )
+
+    ensure_local_tag(
+        git,
+        chromium_src,
+        THORIUM_VERSION,
     )
 
 def prepare_gclient(
