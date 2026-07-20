@@ -153,6 +153,36 @@ def run(
 
 
 
+def run_capture(
+    command: Sequence[str],
+    cwd: Path,
+) -> str:
+
+    printable = subprocess.list2cmdline(command)
+
+    print(
+        f"\n[{cwd}] {printable}",
+        flush=True,
+    )
+
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    except subprocess.CalledProcessError as error:
+        raise BootstrapError(
+            f"command failed: {printable}"
+        ) from error
+
+    return result.stdout
+
+
+
 def require_checkout(
     path: Path,
     description: str,
@@ -328,57 +358,48 @@ def prepare_thorium(
 
 
 
-def ensure_local_tag(
+def resolve_pinned_commit(
     git: str,
     chromium_src: Path,
     tag: str,
-):
-    # A shallow `git clone --depth=1 --branch <tag>` checks out the
-    # correct commit, but does not reliably leave behind a local tag
-    # ref for it (depends on how the remote handles tag refs for a
-    # shallow fetch). Without a local ref that resolves the tag name,
-    # `gclient sync --revision src@<tag>` cannot verify the revision
-    # via `git rev-parse --verify <tag>`. When that verification
-    # fails, gclient widens remote.origin.fetch to all branches and
-    # runs an *unbounded* `git fetch origin --prune --no-tags` to
-    # search the full history for the revision -- on a repo the size
-    # of Chromium's src this can take an hour or more and looks like
-    # gclient "hanging" on "Still working on: src".
+) -> str:
+    # depot_tools' gclient_scm.py decides whether it can skip fetching
+    # by calling scm.GIT.IsValidRevision(cwd, revision, sha_only=True),
+    # which is implemented (in depot_tools/scm.py) as:
     #
-    # Tagging the current HEAD locally (which is already the exact
-    # commit we cloned) lets that verification succeed immediately,
-    # so gclient skips the expensive full-history fetch.
-    check = subprocess.run(
+    #     sha = GIT.ResolveCommit(cwd, rev)
+    #     if sha is None:
+    #         return False
+    #     if sha_only:
+    #         return sha == rev.lower()
+    #
+    # `sha_only=True` requires the *revision string itself* to already
+    # be the full commit SHA -- resolving successfully isn't enough.
+    # Passing a tag name (e.g. "150.0.7871.179") always fails this
+    # comparison, even when the tag resolves locally to a commit that's
+    # already present, so gclient falls through to an unconditional
+    # `git fetch origin --prune --no-tags` to satisfy itself the
+    # revision is reachable. On a repo the size of Chromium's src this
+    # can take an hour or more and looks like gclient "hanging" on
+    # "Still working on: src".
+    #
+    # Resolving the tag to its commit SHA ourselves and passing THAT to
+    # `gclient sync --revision src@<sha>` lets IsValidRevision succeed
+    # immediately (since the object is already present from the shallow
+    # clone), so gclient skips the fetch entirely.
+    commit = run_capture(
         [
             git,
             "-c",
             "color.ui=never",
             "rev-parse",
-            "--quiet",
             "--verify",
-            tag,
+            f"{tag}^{{commit}}",
         ],
-        cwd=chromium_src,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        chromium_src,
     )
 
-    if check.returncode != 0:
-
-        print(
-            f"\nLocal tag '{tag}' missing after shallow clone; "
-            "creating it to avoid a full-history gclient fetch"
-        )
-
-        run(
-            [
-                git,
-                "tag",
-                tag,
-                "HEAD",
-            ],
-            chromium_src,
-        )
+    return commit.strip().lower()
 
 
 
@@ -396,12 +417,6 @@ def prepare_chromium_clone(
 
         print(
             f"\nUsing Chromium checkout: {chromium_src}"
-        )
-
-        ensure_local_tag(
-            git,
-            chromium_src,
-            THORIUM_VERSION,
         )
 
         return
@@ -453,11 +468,6 @@ def prepare_chromium_clone(
         "Chromium",
     )
 
-    ensure_local_tag(
-        git,
-        chromium_src,
-        THORIUM_VERSION,
-    )
 
 def prepare_gclient(
     depot_tools: Path,
@@ -535,6 +545,7 @@ def chromium_required_checkouts_exist(
 def sync_chromium(
     depot_tools: Path,
     chromium_src: Path,
+    pinned_commit: str,
 ):
 
     gclient = str(
@@ -562,7 +573,7 @@ def sync_chromium(
                 "--delete_unversioned_trees",
                 "-vvv",
                 "--revision",
-                f"src@{THORIUM_VERSION}",
+                f"src@{pinned_commit}",
             ],
             chromium_src.parent,
         )
@@ -701,6 +712,13 @@ def bootstrap(
     )
 
 
+    pinned_commit = resolve_pinned_commit(
+        git,
+        args.chromium_src,
+        THORIUM_VERSION,
+    )
+
+
     prepare_gclient(
         args.depot_tools,
         args.chromium_src,
@@ -710,6 +728,7 @@ def bootstrap(
     sync_chromium(
         args.depot_tools,
         args.chromium_src,
+        pinned_commit,
     )
 
 
